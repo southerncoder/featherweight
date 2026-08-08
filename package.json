@@ -1,6 +1,6 @@
 {
   "name": "@bantam-hq/featherweight",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Turn a screenplay PDF into Fountain, FDX, or structured JSON.",
   "type": "module",
   "license": "MIT",
@@ -58,7 +58,7 @@
     "test:integration": "vitest run --project integration",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm test:cli",
+    "check": "pnpm typecheck && pnpm build && pnpm test && pnpm test:cli",
     "prepublishOnly": "pnpm check"
   },
   "dependencies": {

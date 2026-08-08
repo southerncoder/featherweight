@@ -9,7 +9,7 @@ import { extractPositionedPdfText } from "../../src/pdf/extraction/pdf-inspector
 const screenplayPdfUrl = new URL("../brick-and-steel.pdf", import.meta.url);
 
 describe("extractPositionedPdfText", () => {
-  it("extracts every screenplay text run in native order across all five pages", () => {
+  it("extracts every screenplay text run in native order, pinning @firecrawl/pdf-inspector segmentation", () => {
     const result = extractPositionedPdfText(readFileSync(screenplayPdfUrl));
     const items = result.items;
     const actualPageIndices: number[] = [];

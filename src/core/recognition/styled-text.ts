@@ -21,6 +21,10 @@ const styleOrder: readonly TextStyle[] = [
 
 export type LineJoin = "wrap" | "newline";
 
+export function isContinuationDash(value: string): boolean {
+  return value === "-" || value === "–" || value === "—";
+}
+
 export function createStyledText(
   lines: readonly PhysicalTextLine[],
   lineJoins: LineJoin | readonly LineJoin[] = "wrap",
@@ -135,7 +139,10 @@ function createLineSeparator(
     return "";
   }
 
-  if (/^[,.;:!?…)]/u.test(line.text) || previousLine.text.endsWith("-")) {
+  if (
+    /^[,.;:!?…)]/u.test(line.text) ||
+    isContinuationDash(previousLine.text.at(-1) ?? "")
+  ) {
     return "";
   }
 

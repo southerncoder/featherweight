@@ -32,7 +32,7 @@ interface PdfInspectorExtractionModule {
 }
 
 interface PdfInspectorInspectionModule {
-  classifyPdf(buffer: Buffer): PdfInspectorClassification;
+  classifyPdf(buffer: Buffer): unknown;
 }
 
 interface PdfInspectorClassification {
@@ -72,6 +72,7 @@ export function classifyPdfForOcr(
 
   try {
     const classification = pdfInspector.classifyPdf(toPdfBuffer(pdfBytes));
+    assertValidClassification(classification);
 
     return {
       pageCount: classification.pageCount,
@@ -83,6 +84,43 @@ export function classifyPdfForOcr(
     }
 
     throw new PdfInspectionError("PDF_INSPECTION_FAILED", cause);
+  }
+}
+
+function assertValidClassification(
+  value: unknown,
+): asserts value is PdfInspectorClassification {
+  if (typeof value !== "object" || value === null) {
+    throw new Error("Native PDF classification has an invalid result.");
+  }
+
+  if (
+    !("pageCount" in value) ||
+    typeof value.pageCount !== "number" ||
+    !Number.isInteger(value.pageCount) ||
+    value.pageCount < 0
+  ) {
+    throw new Error("Native PDF classification has an invalid page count.");
+  }
+
+  if (!("pagesNeedingOcr" in value) || !Array.isArray(value.pagesNeedingOcr)) {
+    throw new Error("Native PDF classification has invalid OCR pages.");
+  }
+
+  const uniquePageIndexes = new Set<number>();
+
+  for (const pageIndex of value.pagesNeedingOcr) {
+    if (
+      typeof pageIndex !== "number" ||
+      !Number.isInteger(pageIndex) ||
+      pageIndex < 0 ||
+      pageIndex >= value.pageCount ||
+      uniquePageIndexes.has(pageIndex)
+    ) {
+      throw new Error("Native PDF classification has invalid OCR pages.");
+    }
+
+    uniquePageIndexes.add(pageIndex);
   }
 }
 

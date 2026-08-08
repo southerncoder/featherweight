@@ -271,6 +271,45 @@ describe("recognizeScreenplay evidence boundaries", () => {
     });
   });
 
+  it("does not infer an independent Copyright field from geometry alone", () => {
+    const input = normalizedText([
+      {
+        pageIndex: 0,
+        lines: [
+          { text: "Big Fish", x: 278, y: 531, width: 56 },
+          { text: "written by", x: 271, y: 483, width: 70 },
+          { text: "John August", x: 267, y: 459, width: 77 },
+          { text: "FINAL PRODUCTION DRAFT", x: 386, y: 207, width: 154 },
+          {
+            text: "includes post-production dialogue",
+            x: 309,
+            y: 195,
+            width: 231,
+          },
+          { text: "and omitted scenes", x: 414, y: 183, width: 126 },
+          { text: "123 Example Street", x: 72, y: 147, width: 132 },
+        ],
+      },
+      {
+        pageIndex: 1,
+        lines: [
+          {
+            text: "INT. RIVER - DAY",
+            x: 108,
+            y: 700,
+            styles: ["bold"],
+          },
+        ],
+      },
+    ]);
+
+    const screenplay = recognizeScreenplay(input, establishedLayout);
+
+    expect(
+      screenplay.titlePage.find((field) => field.key === "Copyright"),
+    ).toBeUndefined();
+  });
+
   it("recognizes a standalone opening FADE IN as a transition without inventing punctuation", () => {
     const input = normalizedText([
       {
@@ -337,6 +376,37 @@ describe("recognizeScreenplay evidence boundaries", () => {
       elements: [
         scene("INT. GOLDEN GATE BRIDGE, MINUTES LATER"),
         action("The car crosses the bridge."),
+      ],
+    });
+  });
+
+  it("keeps adjacent conventional scene headings separate at the Action measure", () => {
+    const input = normalizedText([
+      {
+        pageIndex: 0,
+        lines: [
+          {
+            text: "INT. VERY LONG ESTABLISHING LOCATION - DAY",
+            x: 108,
+            y: 700,
+            width: 396,
+            styles: ["bold"],
+          },
+          {
+            text: "EXT. FIELD - NIGHT",
+            x: 108,
+            y: 688,
+            styles: ["bold"],
+          },
+        ],
+      },
+    ]);
+
+    expect(recognizeScreenplay(input, establishedLayout)).toEqual({
+      titlePage: [],
+      elements: [
+        scene("INT. VERY LONG ESTABLISHING LOCATION - DAY"),
+        scene("EXT. FIELD - NIGHT"),
       ],
     });
   });
@@ -616,6 +686,41 @@ describe("recognizeScreenplay evidence boundaries", () => {
     });
   });
 
+  it.each(["–", "—"])(
+    "joins paired %s Action continuation markers without a space",
+    (dash) => {
+      const input = normalizedText([
+        {
+          pageIndex: 0,
+          lines: [
+            {
+              text: `Interrupted${dash}`,
+              x: 108,
+              y: 36,
+              width: 120,
+            },
+          ],
+        },
+        {
+          pageIndex: 1,
+          lines: [
+            {
+              text: `${dash}continues.`,
+              x: 108,
+              y: 720,
+              width: 120,
+            },
+          ],
+        },
+      ]);
+
+      expect(recognizeScreenplay(input, establishedLayout)).toEqual({
+        titlePage: [],
+        elements: [action(`Interrupted${dash}${dash}continues.`)],
+      });
+    },
+  );
+
   it("preserves adjacent inset Action lines as one multiline block", () => {
     const input = normalizedText([
       {
@@ -704,6 +809,52 @@ describe("recognizeScreenplay evidence boundaries", () => {
         },
         action("They cross the field."),
       ],
+    });
+  });
+
+  it("accepts only plausible paired scene-number fragments", () => {
+    const nonNumberInput = normalizedText([
+      {
+        pageIndex: 0,
+        lines: [
+          { text: "NOTE", x: 54, y: 700 },
+          {
+            text: "INT. ROOM - DAY",
+            x: 108,
+            y: 700,
+            styles: ["bold"],
+          },
+          { text: "NOTE", x: 540, y: 700 },
+        ],
+      },
+    ]);
+    const numberInput = normalizedText([
+      {
+        pageIndex: 0,
+        lines: [
+          { text: "15", x: 54, y: 700 },
+          {
+            text: "INT. ROOM - DAY",
+            x: 108,
+            y: 700,
+            styles: ["bold"],
+          },
+          { text: "15", x: 540, y: 700 },
+        ],
+      },
+    ]);
+
+    expect(recognizeScreenplay(nonNumberInput, establishedLayout)).toEqual({
+      titlePage: [],
+      elements: [
+        action("NOTE"),
+        scene("INT. ROOM - DAY"),
+        action("NOTE"),
+      ],
+    });
+    expect(recognizeScreenplay(numberInput, establishedLayout)).toEqual({
+      titlePage: [],
+      elements: [scene("INT. ROOM - DAY", "15")],
     });
   });
 

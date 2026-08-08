@@ -7,11 +7,9 @@ import {
   resolvePageSupportedCoordinateEvidence,
   type CoordinateEvidence,
 } from "./coordinate-evidence.js";
-import {
-  findScreenplaySequences,
-  isUppercaseText,
-  type DualDialogueOccurrence,
-} from "./screenplay-sequences.js";
+import { findScreenplaySequences } from "./screenplay-sequences.js";
+import type { DualDialogueOccurrence } from "./dialogue-occurrences.js";
+import { isUppercaseText } from "./screenplay-text.js";
 
 export interface DualDialogueEvidence {
   readonly leftCharacterCue: CoordinateEvidence;

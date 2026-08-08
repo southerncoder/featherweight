@@ -260,6 +260,78 @@ describe("screenplayDocumentToFountain", () => {
   it("returns the exact empty string for an empty document", () => {
     expect(screenplayDocumentToFountain({ titlePage: [], elements: [] })).toBe("");
   });
+
+  it("forces title-page-shaped action only at the true document start", () => {
+    expect(
+      screenplayDocumentToFountain({
+        titlePage: [],
+        elements: [
+          action("Note: The room is empty."),
+          action("He said: run."),
+        ],
+      }),
+    ).toBe("!Note: The room is empty.\n\nHe said: run.\n");
+
+    expect(
+      screenplayDocumentToFountain({
+        titlePage: [],
+        elements: [action("He said: run.")],
+      }),
+    ).toBe("!He said: run.\n");
+
+    expect(
+      screenplayDocumentToFountain({
+        titlePage: [],
+        elements: [action("Revision_2-A: Blue")],
+      }),
+    ).toBe("!Revision\\_2-A: Blue\n");
+
+    expect(
+      screenplayDocumentToFountain({
+        titlePage: [],
+        elements: [action("He said, quietly: run.")],
+      }),
+    ).toBe("He said, quietly: run.\n");
+
+    expect(
+      screenplayDocumentToFountain({
+        titlePage: [],
+        elements: [
+          scene(plain("INT. ROOM - DAY")),
+          action("Note: The room is empty."),
+        ],
+      }),
+    ).toBe("INT. ROOM - DAY\n\nNote: The room is empty.\n");
+
+    expect(
+      screenplayDocumentToFountain({
+        titlePage: [{ key: "Title", values: [plain("Example")] }],
+        elements: [action("Note: The room is empty.")],
+      }),
+    ).toBe("Title: Example\n\nNote: The room is empty.\n");
+  });
+
+  it("preserves a scene heading that already has a force marker", () => {
+    expect(
+      screenplayDocumentToFountain({
+        titlePage: [],
+        elements: [scene(plain(".MEMORY"))],
+      }),
+    ).toBe(".MEMORY\n");
+  });
+
+  it("emits text with unrepresentable Fountain role syntax verbatim", () => {
+    expect(
+      screenplayDocumentToFountain({
+        titlePage: [],
+        elements: [
+          action("Open [[TOP SECRET]] now."),
+          character(plain("@HANDLE")),
+          dialogue("Ready."),
+        ],
+      }),
+    ).toBe("Open [[TOP SECRET]] now.\n\n@HANDLE\nReady.\n");
+  });
 });
 
 function run(text: string, styles: readonly TextStyle[] = []): TextRun {

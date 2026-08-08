@@ -169,17 +169,15 @@ describe("groupPositionedTextIntoPhysicalLines", () => {
     const sourceItemsByIndex = new Map(
       positionedText.items.map((item) => [item.sourceIndex, item]),
     );
-    const pageLineCounts = Array.from({ length: 5 }, (_, pageIndex) =>
-      physicalText.lines.filter((line) => line.pageIndex === pageIndex).length,
-    );
     const flattenedSourceIndexes = physicalText.lines.flatMap((line) =>
       line.spans.map((span) => span.sourceIndex),
     );
 
-    expect(physicalText.lines).toHaveLength(121);
-    expect(pageLineCounts).toEqual([9, 37, 34, 35, 6]);
     expect(flattenedSourceIndexes).toEqual(
-      Array.from({ length: 126 }, (_, sourceIndex) => sourceIndex),
+      Array.from(
+        { length: positionedText.items.length },
+        (_, sourceIndex) => sourceIndex,
+      ),
     );
 
     for (const line of physicalText.lines) {

@@ -169,4 +169,177 @@ describe("normalizePhysicalText", () => {
       },
     ]);
   });
+
+  it("recognizes a continued cue at the local top of a vertically shifted page", () => {
+    const moreLine = createPhysicalLine(5, 0, "(MORE)", 216, 48);
+    const continuedCueLine = createPhysicalLine(
+      6,
+      1,
+      "NOAH (CONT'D)",
+      252,
+      650,
+    );
+    const physicalText: PhysicalText = {
+      lines: [
+        createPhysicalLine(0, 0, "INT. STATION - NIGHT", 108, 720),
+        createPhysicalLine(1, 0, "Rain crosses the windows.", 108, 600),
+        createPhysicalLine(2, 0, "NOAH", 252, 108),
+        createPhysicalLine(3, 0, "I can still hear it.", 180, 96),
+        createPhysicalLine(4, 0, "Even from here.", 180, 84),
+        moreLine,
+        continuedCueLine,
+        createPhysicalLine(7, 1, "Under the platform.", 180, 638),
+        createPhysicalLine(8, 1, "The rails begin to hum.", 108, 590),
+        createPhysicalLine(9, 1, "A signal changes to red.", 108, 566),
+        createPhysicalLine(10, 1, "Light moves through the rain.", 108, 542),
+        createPhysicalLine(11, 1, "The empty station waits.", 108, 72),
+      ],
+    };
+
+    const result = normalizePhysicalText(physicalText);
+
+    expect(result.suppressed).toEqual([
+      { line: moreLine, reasons: ["screenplay-pagination"] },
+      { line: continuedCueLine, reasons: ["screenplay-pagination"] },
+    ]);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("retains a continued cue when the prior dialogue is not at the page bottom", () => {
+    const moreLine = createPhysicalLine(5, 0, "(MORE)", 216, 48);
+    const continuedCueLine = createPhysicalLine(
+      6,
+      1,
+      "NOAH (CONT'D)",
+      252,
+      720,
+    );
+    const physicalText: PhysicalText = {
+      lines: [
+        createPhysicalLine(0, 0, "INT. STATION - NIGHT", 108, 720),
+        createPhysicalLine(1, 0, "NOAH", 252, 324),
+        createPhysicalLine(2, 0, "I can still hear it.", 180, 312),
+        createPhysicalLine(3, 0, "Rain crosses the windows.", 108, 260),
+        createPhysicalLine(4, 0, "It never stops.", 180, 236),
+        moreLine,
+        continuedCueLine,
+        createPhysicalLine(7, 1, "Under the platform.", 180, 708),
+        createPhysicalLine(8, 1, "The rails begin to hum.", 108, 590),
+        createPhysicalLine(9, 1, "A signal changes to red.", 108, 566),
+        createPhysicalLine(10, 1, "Light moves through the rain.", 108, 542),
+        createPhysicalLine(11, 1, "The empty station waits.", 108, 72),
+      ],
+    };
+
+    const result = normalizePhysicalText(physicalText);
+
+    expect(result.suppressed).toEqual([
+      { line: moreLine, reasons: ["screenplay-pagination"] },
+    ]);
+    expect(result.pages[1]?.lines).toContain(continuedCueLine);
+    expect(result.diagnostics).toEqual([
+      {
+        code: "AMBIGUOUS_PAGE_ARTIFACT",
+        pageIndex: 1,
+        sourceIndexes: [6],
+        candidateReasons: ["screenplay-pagination"],
+      },
+    ]);
+  });
+
+  it("uses document extents for a sparse shifted page", () => {
+    const continuedCueLine = createPhysicalLine(
+      4,
+      1,
+      "NOAH (CONT'D)",
+      252,
+      650,
+    );
+    const physicalText: PhysicalText = {
+      lines: [
+        createPhysicalLine(0, 0, "INT. STATION - NIGHT", 108, 720),
+        createPhysicalLine(1, 0, "NOAH", 252, 108),
+        createPhysicalLine(2, 0, "I can still hear it.", 180, 96),
+        createPhysicalLine(3, 0, "The platform is empty.", 108, 48),
+        continuedCueLine,
+        createPhysicalLine(5, 1, "Under the platform.", 180, 638),
+      ],
+    };
+
+    const result = normalizePhysicalText(physicalText);
+
+    expect(result.suppressed).toEqual([]);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.pages[1]?.lines).toContain(continuedCueLine);
+  });
+
+  it("retains and diagnoses a recurring stable-position body line", () => {
+    const recurringLines: PhysicalTextLine[] = [];
+    const lines: PhysicalTextLine[] = [];
+    let sourceIndex = 0;
+
+    for (let pageIndex = 0; pageIndex < 4; pageIndex += 1) {
+      lines.push(
+        createPhysicalLine(
+          sourceIndex++,
+          pageIndex,
+          `INT. STATION ${pageIndex} - DAY`,
+          108,
+          720,
+        ),
+        createPhysicalLine(
+          sourceIndex++,
+          pageIndex,
+          `Rain crosses glass ${pageIndex}.`,
+          108,
+          600,
+        ),
+      );
+      const recurringLine = createPhysicalLine(
+        sourceIndex++,
+        pageIndex,
+        "THE PLATFORM IS EMPTY",
+        108,
+        360,
+      );
+      recurringLines.push(recurringLine);
+      lines.push(
+        recurringLine,
+        createPhysicalLine(
+          sourceIndex++,
+          pageIndex,
+          `Signal ${pageIndex} changes.`,
+          108,
+          300,
+        ),
+        createPhysicalLine(
+          sourceIndex++,
+          pageIndex,
+          `Wind moves sign ${pageIndex}.`,
+          108,
+          180,
+        ),
+        createPhysicalLine(
+          sourceIndex++,
+          pageIndex,
+          `Rail ${pageIndex} begins to hum.`,
+          108,
+          72,
+        ),
+      );
+    }
+
+    const result = normalizePhysicalText({ lines });
+
+    expect(result.suppressed).toEqual([]);
+    expect(result.pages.flatMap((page) => page.lines)).toEqual(lines);
+    expect(result.diagnostics).toEqual(
+      recurringLines.map((line) => ({
+        code: "AMBIGUOUS_PAGE_ARTIFACT",
+        pageIndex: line.pageIndex,
+        sourceIndexes: line.spans.map((span) => span.sourceIndex),
+        candidateReasons: ["recurring-page-artifact"],
+      })),
+    );
+  });
 });

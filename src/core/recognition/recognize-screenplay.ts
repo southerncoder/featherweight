@@ -1,11 +1,11 @@
 import { inferCoordinateTolerance } from "../layout/coordinate-evidence.js";
 import type { ScreenplayLayout } from "../layout/screenplay-layout.js";
-import {
-  findScreenplaySequences,
-  type DialogueContentOccurrence,
-  type DialogueOccurrence,
-  type DualDialogueOccurrence,
-} from "../layout/screenplay-sequences.js";
+import { findScreenplaySequences } from "../layout/screenplay-sequences.js";
+import type {
+  DialogueContentOccurrence,
+  DialogueOccurrence,
+  DualDialogueOccurrence,
+} from "../layout/dialogue-occurrences.js";
 import type { NormalizedText } from "../normalized-text.js";
 import type { PhysicalTextLine } from "../physical-lines.js";
 import type {
@@ -21,21 +21,24 @@ import type {
 import {
   collectActionLines,
   createAction,
-  createSceneHeading,
-  extractTitlePage,
-  findCenteredActionLines,
-  findSceneHeadings,
   inferActionLineMeasure,
-} from "./screenplay-blocks.js";
+} from "./action-lines.js";
+import { findCenteredActionLines } from "./centered-action.js";
+import { createSceneHeading, findSceneHeadings } from "./scene-headings.js";
+import { extractTitlePage } from "./title-page.js";
+import {
+  inferLineMeasure,
+  visibleLineShortfallMultiplier,
+} from "./line-measure.js";
+import {
+  inferSentenceSpacingConvention,
+  type SentenceSpacingConvention,
+} from "./sentence-spacing.js";
 import {
   createStyledText,
   sliceStyledText,
   styledTextValue,
 } from "./styled-text.js";
-import {
-  inferSentenceSpacingConvention,
-  type SentenceSpacingConvention,
-} from "./sentence-spacing.js";
 
 export function recognizeScreenplay(
   normalizedText: NormalizedText,
@@ -294,19 +297,7 @@ function inferDialogueLineMeasure(
     return null;
   }
 
-  const widths = lines
-    .filter(
-      (line) =>
-        Math.abs(line.bounds.x - layout.dialogue!.x) <= coordinateTolerance,
-    )
-    .map((line) => line.bounds.width)
-    .sort((left, right) => left - right);
-
-  if (widths.length === 0) {
-    return null;
-  }
-
-  return widths[Math.floor((widths.length - 1) * 0.9)]!;
+  return inferLineMeasure(lines, layout.dialogue.x, coordinateTolerance);
 }
 
 function createDialogueLineJoins(
@@ -322,7 +313,8 @@ function createDialogueLineJoins(
   for (const [index, line] of lines.slice(1).entries()) {
     const previousLine = lines[index]!;
     const visibleShortfall =
-      Math.min(previousLine.bounds.height, line.bounds.height) * 5;
+      Math.min(previousLine.bounds.height, line.bounds.height) *
+      visibleLineShortfallMultiplier;
     const previousLineIsShort =
       previousLine.bounds.width + visibleShortfall < dialogueLineMeasure;
     const lineIsShort =

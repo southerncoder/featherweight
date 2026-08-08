@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { inspectScreenplayPdf } from "../pdf/inspection.js";
@@ -49,7 +49,10 @@ export async function runCli(
     ? null
     : resolve(runtime.cwd, command.outputPath);
 
-  if (outputPath === inputPath) {
+  if (
+    outputPath === inputPath ||
+    (outputPath !== null && await pathsReferToSameFile(inputPath, outputPath))
+  ) {
     return reportError(runtime, samePathErrorMessage, 1);
   }
 
@@ -62,11 +65,26 @@ export async function runCli(
   }
 
   let pageCount: number;
+  let pagesNeedingOcr: readonly number[];
 
   try {
-    pageCount = inspectScreenplayPdf(pdfBytes).pageCount;
+    const inspection = inspectScreenplayPdf(pdfBytes);
+    pageCount = inspection.pageCount;
+    pagesNeedingOcr = inspection.pagesNeedingOcr;
   } catch {
     return reportError(runtime, extractionErrorMessage, 1);
+  }
+
+  if (pagesNeedingOcr.length > 0) {
+    const warning =
+      `featherweight: OCR is needed for pages ${pagesNeedingOcr.join(", ")}; ` +
+      "converting native text only.\n";
+
+    try {
+      await runtime.writeStderr(warning);
+    } catch {
+      return reportError(runtime, writeErrorMessage, 1);
+    }
   }
 
   let artifact: string;
@@ -97,6 +115,22 @@ export async function runCli(
     return 0;
   } catch {
     return reportError(runtime, writeErrorMessage, 1);
+  }
+}
+
+async function pathsReferToSameFile(
+  inputPath: string,
+  outputPath: string,
+): Promise<boolean> {
+  try {
+    const [inputStat, outputStat] = await Promise.all([
+      stat(inputPath, { bigint: true }),
+      stat(outputPath, { bigint: true }),
+    ]);
+
+    return inputStat.dev === outputStat.dev && inputStat.ino === outputStat.ino;
+  } catch {
+    return false;
   }
 }
 

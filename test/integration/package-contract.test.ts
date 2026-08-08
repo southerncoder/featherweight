@@ -1,35 +1,107 @@
-import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import { expect, test } from "vitest";
 
-test("declares the supported package and contributor toolchain", async () => {
-  const packageJson = await readFile(
-    new URL("../../package.json", import.meta.url),
-    "utf8",
-  );
-  const packageManifest = JSON.parse(packageJson) as {
-    name?: unknown;
-    type?: unknown;
-    engines?: unknown;
-    packageManager?: unknown;
-    bin?: unknown;
-  };
+const executeFile = promisify(execFile);
+const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 
-  expect({
-    name: packageManifest.name,
-    type: packageManifest.type,
-    engines: packageManifest.engines,
-    packageManager: packageManifest.packageManager,
-  }).toEqual({
-    name: "@bantam-hq/featherweight",
-    type: "module",
-    engines: { node: ">=24" },
-    packageManager: "pnpm@11.18.0",
-  });
-  expect(packageManifest.bin).toEqual({
-    featherweight: expect.any(String),
-  });
-  expect(
-    (packageManifest.bin as { featherweight: string }).featherweight.length,
-  ).toBeGreaterThan(0);
+test("packs only the supported distribution and project documentation", async () => {
+  const npmCache = await mkdtemp(join(tmpdir(), "featherweight-npm-cache-"));
+
+  try {
+    const { stdout } = await executeFile(
+      process.platform === "win32" ? "npm.cmd" : "npm",
+      ["pack", "--dry-run", "--json", "--cache", npmCache],
+      { cwd: repositoryRoot, encoding: "utf8" },
+    );
+    const packResults = JSON.parse(stdout) as readonly PackResult[];
+    const packResult = packResults[0];
+
+    expect(packResult).toBeDefined();
+
+    const packedFiles = new Set(
+      packResult?.files.map((file) => file.path) ?? [],
+    );
+    const requiredFiles = [
+      "dist/index.js",
+      "dist/index.d.ts",
+      "dist/cli.js",
+      "CHANGELOG.md",
+      "LICENSE",
+      "README.md",
+      "THIRD_PARTY_NOTICES.md",
+    ];
+
+    for (const requiredFile of requiredFiles) {
+      expect(packedFiles.has(requiredFile), requiredFile).toBe(true);
+    }
+
+    for (const packedFile of packedFiles) {
+      expect(
+        packedFile === "package.json" ||
+          requiredFiles.includes(packedFile) ||
+          packedFile.startsWith("dist/"),
+        packedFile,
+      ).toBe(true);
+      expect(packedFile).not.toMatch(/^(?:src|test|corpus)\//u);
+    }
+
+    const packageManifest = JSON.parse(
+      await readFile(join(repositoryRoot, "package.json"), "utf8"),
+    ) as PackageManifest;
+
+    expect(packageManifest.name).toBe("@bantam-hq/featherweight");
+    expect(packageManifest.type).toBe("module");
+    expect(packageManifest.engines.node).toBe(">=24");
+    expect(packageManifest.packageManager).toBe("pnpm@11.18.0");
+
+    const declaredTargets = [
+      packageManifest.main,
+      packageManifest.types,
+      ...collectStringValues(packageManifest.exports),
+      ...collectStringValues(packageManifest.bin),
+    ];
+
+    for (const declaredTarget of declaredTargets) {
+      expect(packedFiles.has(removeLeadingDotSlash(declaredTarget))).toBe(true);
+    }
+  } finally {
+    await rm(npmCache, { recursive: true, force: true });
+  }
 });
+
+interface PackResult {
+  readonly files: readonly { readonly path: string }[];
+}
+
+interface PackageManifest {
+  readonly name: string;
+  readonly type: string;
+  readonly engines: { readonly node: string };
+  readonly packageManager: string;
+  readonly main: string;
+  readonly types: string;
+  readonly exports: unknown;
+  readonly bin: unknown;
+}
+
+function collectStringValues(value: unknown): string[] {
+  if (typeof value === "string") {
+    return [value];
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return [];
+  }
+
+  return Object.values(value).flatMap(collectStringValues);
+}
+
+function removeLeadingDotSlash(path: string): string {
+  return path.startsWith("./") ? path.slice(2) : path;
+}

@@ -153,6 +153,9 @@ optional.
 Plain-text Fountain that keeps the screenplay editable and portable.
 Featherweight adds syntax only where Fountain needs it to preserve the
 recognized screenplay.
+Screenplay text that resembles Fountain syntax is emitted verbatim because
+Fountain defines escaping only for emphasis, so Fountain applications may
+interpret that text as syntax.
 
 ### FDX
 

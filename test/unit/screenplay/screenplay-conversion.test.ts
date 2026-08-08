@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { screenplayDocumentToFountain } from "../../../src/fountain/screenplay-document-to-fountain.js";
 import { createScreenplayDocument } from "../../../src/screenplay/create-screenplay-document.js";
+import {
+  screenplayToJSON as convertPdfToJSON,
+} from "../../../src/screenplay/screenplay-conversion.js";
+import { ScreenplayConversionError } from "../../../src/screenplay/screenplay-conversion-error.js";
 import type {
   PositionedTextPage,
   PositionedTextPageItem,
@@ -36,6 +40,39 @@ function screenplayToFountain(
 }
 
 describe("screenplay conversion", () => {
+  it.each([
+    ["null", null],
+    ["a string", "0"],
+    ["an object", { pageIndex: 0 }],
+    ["NaN", [Number.NaN]],
+    ["Infinity", [Number.POSITIVE_INFINITY]],
+    ["a fractional index", [0.5]],
+    ["a negative index", [-1]],
+  ])("rejects %s in either public page route", (_name, invalidRoute) => {
+    const convertWithUnknownRoutes = convertPdfToJSON as unknown as (
+      pdfBytes: Uint8Array,
+      nativePageIndexes: unknown,
+      ocrPageIndexes: unknown,
+    ) => string;
+    const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+
+    for (const routes of [
+      [invalidRoute, []],
+      [[], invalidRoute],
+    ] as const) {
+      let thrown: unknown;
+
+      try {
+        convertWithUnknownRoutes(pdfBytes, routes[0], routes[1]);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(ScreenplayConversionError);
+      expect(thrown).toMatchObject({ code: "INVALID_PAGE_INDEX" });
+    }
+  });
+
   it("preserves a geometry-evidenced word boundary between styled source items", () => {
     const nativePages = [
       page(
@@ -71,7 +108,7 @@ describe("screenplay conversion", () => {
     expect(screenplayToFountain(nativePages, [])).toBe("_thousand times_\n");
   });
 
-  it("uses canonical page order, stable item order, and caller-visible source routing", () => {
+  it("orders and merges page lists independently of routing through createScreenplayDocument", () => {
     const pageZero = page(
       0,
       item("First ", 108, 700),

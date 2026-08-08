@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   copyFileSync,
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -30,6 +31,11 @@ const scannedInputPdf = join(
   repositoryRoot,
   "test",
   "brick-and-steel-scanned.pdf",
+);
+const mixedInputPdf = join(
+  repositoryRoot,
+  "test",
+  "brick-and-steel-mixed.pdf",
 );
 const fountainFixture = join(
   repositoryRoot,
@@ -60,6 +66,10 @@ const extractionError =
 const samePathError =
   "featherweight: Input and output paths must be different.\n";
 const writeError = "featherweight: Unable to write output.\n";
+const scannedWarning =
+  "featherweight: OCR is needed for pages 0, 1, 2, 3, 4; converting native text only.\n";
+const mixedWarning =
+  "featherweight: OCR is needed for pages 1, 3; converting native text only.\n";
 const expectedEmptyJson =
   "{\n" +
   '  "titlePage": [],\n' +
@@ -182,12 +192,12 @@ test("emits exact reviewed JSON and exact native-empty artifacts to stdout", () 
   assertExecution(runCli([scannedInputPdf]), {
     status: 0,
     stdout: "",
-    stderr: "",
+    stderr: scannedWarning,
   });
   assertExecution(runCli([scannedInputPdf, "--format", "json"]), {
     status: 0,
     stdout: expectedEmptyJson,
-    stderr: "",
+    stderr: scannedWarning,
   });
 });
 
@@ -202,13 +212,24 @@ test("emits reviewed FDX and a valid native-empty FDX document to stdout", () =>
 
   const emptyResult = runCli([scannedInputPdf, "--format", "fdx"]);
 
-  assertExecutionSucceeded(emptyResult);
+  assert.deepEqual(
+    { status: emptyResult.status, stderr: emptyResult.stderr },
+    { status: 0, stderr: scannedWarning },
+  );
   const emptyRoot = parseFdxDocument(emptyResult.stdout);
   assert.deepEqual(
     elementChildren(firstElement(emptyRoot, "Content"), "Paragraph"),
     [],
   );
   assert.deepEqual(elementChildren(emptyRoot, "TitlePage"), []);
+});
+
+test("warns once when mixed pages need OCR and continues native conversion", () => {
+  const result = runCli([mixedInputPdf, "--format", "json"]);
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, mixedWarning);
+  assert.notEqual(result.stdout, expectedEmptyJson);
 });
 
 test("overwrites Fountain and JSON output files without altering the input", () => {
@@ -377,6 +398,78 @@ test("sanitizes operational failures and protects the input", () => {
     stdout: "",
     stderr: writeError,
   });
+});
+
+test(
+  "rejects an output symlink to the input without altering the input",
+  (t) => {
+    const workspace = join(caseRoot, "output-symlink");
+    const copiedInput = join(workspace, "input.pdf");
+    const outputPath = join(workspace, "output.fountain");
+    mkdirSync(workspace);
+    copyFileSync(inputPdf, copiedInput);
+
+    try {
+      symlinkSync(copiedInput, outputPath, "file");
+    } catch (error) {
+      t.skip(`Unable to create file symlink: ${error.message}`);
+      return;
+    }
+
+    const inputHash = hashFile(copiedInput);
+
+    assertExecution(runCli([copiedInput, "--output", outputPath]), {
+      status: 1,
+      stdout: "",
+      stderr: samePathError,
+    });
+    assert.equal(hashFile(copiedInput), inputHash);
+  },
+);
+
+test("rejects the input reached through a symlinked directory", (t) => {
+  const workspace = join(caseRoot, "symlinked-directory");
+  const actualDirectory = join(workspace, "actual");
+  const linkedDirectory = join(workspace, "linked");
+  const copiedInput = join(actualDirectory, "input.pdf");
+  mkdirSync(actualDirectory, { recursive: true });
+  copyFileSync(inputPdf, copiedInput);
+
+  try {
+    symlinkSync(
+      actualDirectory,
+      linkedDirectory,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+  } catch (error) {
+    t.skip(`Unable to create directory symlink: ${error.message}`);
+    return;
+  }
+
+  const inputHash = hashFile(copiedInput);
+
+  assertExecution(
+    runCli([copiedInput, "--output", join(linkedDirectory, "input.pdf")]),
+    { status: 1, stdout: "", stderr: samePathError },
+  );
+  assert.equal(hashFile(copiedInput), inputHash);
+});
+
+test("rejects a hard-linked output without altering the input", () => {
+  const workspace = join(caseRoot, "hard-linked-output");
+  const copiedInput = join(workspace, "input.pdf");
+  const outputPath = join(workspace, "output.fountain");
+  mkdirSync(workspace);
+  copyFileSync(inputPdf, copiedInput);
+  linkSync(copiedInput, outputPath);
+  const inputHash = hashFile(copiedInput);
+
+  assertExecution(runCli([copiedInput, "--output", outputPath]), {
+    status: 1,
+    stdout: "",
+    stderr: samePathError,
+  });
+  assert.equal(hashFile(copiedInput), inputHash);
 });
 
 function runCli(arguments_) {

@@ -84,7 +84,7 @@ function neighboringContentStyles(
     neighborIndex >= 0 && neighborIndex < characters.length;
     neighborIndex += direction
   ) {
-    const neighbor = characters[neighborIndex];
+    const neighbor = characters[neighborIndex]!;
 
     if (neighbor.character === "\n") {
       return [];
@@ -123,7 +123,7 @@ function closeStyles(
   styles: readonly SupportedStyle[],
 ): void {
   for (let styleIndex = styles.length - 1; styleIndex >= 0; styleIndex -= 1) {
-    output.push(styleMarkers[styles[styleIndex]]);
+    output.push(styleMarkers[styles[styleIndex]!]);
   }
 }
 

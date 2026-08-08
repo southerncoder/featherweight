@@ -25,7 +25,7 @@ export function screenplayDocumentToFountain(
   document: ScreenplayDocument,
 ): string {
   const titlePage = serializeTitlePage(document.titlePage);
-  const bodyBlocks = serializeBody(document.elements);
+  const bodyBlocks = serializeBody(document.elements, titlePage.length === 0);
   const documentSections =
     titlePage.length > 0 ? [titlePage, ...bodyBlocks] : bodyBlocks;
 
@@ -61,11 +61,14 @@ function serializeTitlePageField(field: TitlePageField): string {
   return [`${field.key}:`, ...indentedLines].join("\n");
 }
 
-function serializeBody(elements: readonly ScreenplayElement[]): string[] {
+function serializeBody(
+  elements: readonly ScreenplayElement[],
+  bodyStartsDocument: boolean,
+): string[] {
   const blocks: string[] = [];
 
   for (let elementIndex = 0; elementIndex < elements.length; elementIndex += 1) {
-    const element = elements[elementIndex];
+    const element = elements[elementIndex]!;
 
     if (element.type === "character") {
       const dialogueLines = [serializeCharacter(element)];
@@ -81,18 +84,23 @@ function serializeBody(elements: readonly ScreenplayElement[]): string[] {
       continue;
     }
 
-    blocks.push(serializeElement(element));
+    blocks.push(
+      serializeElement(element, bodyStartsDocument && elementIndex === 0),
+    );
   }
 
   return blocks;
 }
 
-function serializeElement(element: ScreenplayElement): string {
+function serializeElement(
+  element: ScreenplayElement,
+  startsDocument: boolean,
+): string {
   switch (element.type) {
     case "scene-heading":
       return serializeSceneHeading(element);
     case "action":
-      return serializeAction(element);
+      return serializeAction(element, startsDocument);
     case "character":
       return serializeCharacter(element);
     case "parenthetical":
@@ -112,14 +120,15 @@ function serializeElement(element: ScreenplayElement): string {
 
 function serializeSceneHeading(sceneHeading: SceneHeading): string {
   const text = renderedText(sceneHeading.text);
-  const forceMarker = isAutomaticSceneHeading(text) ? "" : ".";
+  const forceMarker =
+    isAutomaticSceneHeading(text) || text.startsWith(".") ? "" : ".";
   const sceneNumber =
     sceneHeading.sceneNumber === null ? "" : ` #${sceneHeading.sceneNumber}#`;
 
   return `${forceMarker}${unstyledTextToFountain(sceneHeading.text)}${sceneNumber}`;
 }
 
-function serializeAction(action: Action): string {
+function serializeAction(action: Action, startsDocument: boolean): string {
   const text = styledTextToFountain(action.text);
 
   if (action.alignment === "center") {
@@ -130,10 +139,18 @@ function serializeAction(action: Action): string {
   }
 
   const lines = text.split("\n");
+  const unescapedLines = renderedText(action.text).split("\n");
 
   return lines
     .map((line, lineIndex) =>
-      actionLineRequiresForceMarker(lines, lineIndex) ? `!${line}` : line,
+      actionLineRequiresForceMarker(
+        lines,
+        unescapedLines,
+        lineIndex,
+        startsDocument,
+      )
+        ? `!${line}`
+        : line,
     )
     .join("\n");
 }
@@ -213,10 +230,13 @@ function isAutomaticTransition(text: string): boolean {
 
 function actionLineRequiresForceMarker(
   lines: readonly string[],
+  unescapedLines: readonly string[],
   lineIndex: number,
+  actionStartsDocument: boolean,
 ): boolean {
-  const line = lines[lineIndex];
+  const line = lines[lineIndex]!;
   const syntax = line.trimStart();
+  const unescapedSyntax = unescapedLines[lineIndex]!.trimStart();
 
   if (syntax.length === 0) {
     return false;
@@ -226,15 +246,24 @@ function actionLineRequiresForceMarker(
     return true;
   }
 
+  if (
+    actionStartsDocument &&
+    lineIndex === 0 &&
+    /^[\p{L}\p{N} _-]+:/u.test(unescapedSyntax)
+  ) {
+    return true;
+  }
+
   const previousLineIsBlank =
-    lineIndex === 0 || isBlankFountainLine(lines[lineIndex - 1]);
+    lineIndex === 0 || isBlankFountainLine(lines[lineIndex - 1]!);
 
   if (!previousLineIsBlank) {
     return false;
   }
 
   const nextLineIsBlank =
-    lineIndex === lines.length - 1 || isBlankFountainLine(lines[lineIndex + 1]);
+    lineIndex === lines.length - 1 ||
+    isBlankFountainLine(lines[lineIndex + 1]!);
 
   if (
     nextLineIsBlank &&

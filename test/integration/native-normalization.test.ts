@@ -117,7 +117,7 @@ function expectOrderedPages(
 }
 
 describe("normalizePhysicalText", () => {
-  it("recovers equal active screenplays from clean and marked exports", () => {
+  it("suppresses margin artifacts and diagnoses recurring body artifacts", () => {
     const cleanPhysicalText = extractPhysicalText(cleanGauntletPdfUrl);
     const markedPhysicalText = extractPhysicalText(markedGauntletPdfUrl);
     const cleanResult: NormalizedText = normalizePhysicalText(
@@ -150,10 +150,6 @@ describe("normalizePhysicalText", () => {
         reasons: recurringArtifact,
       },
       {
-        line: findLine(markedPhysicalText, 1, "REVIEW COPY"),
-        reasons: recurringArtifact,
-      },
-      {
         line: findLine(markedPhysicalText, 1, "(CONTINUED)"),
         reasons: screenplayPagination,
       },
@@ -172,10 +168,6 @@ describe("normalizePhysicalText", () => {
       {
         line: findLine(markedPhysicalText, 2, "2."),
         reasons: sourcePageNumber,
-      },
-      {
-        line: findLine(markedPhysicalText, 2, "REVIEW COPY"),
-        reasons: recurringArtifact,
       },
       {
         line: findLine(markedPhysicalText, 2, "(MORE)"),
@@ -206,10 +198,6 @@ describe("normalizePhysicalText", () => {
         reasons: screenplayPagination,
       },
       {
-        line: findLine(markedPhysicalText, 3, "REVIEW COPY"),
-        reasons: recurringArtifact,
-      },
-      {
         line: findLine(markedPhysicalText, 3, "(CONTINUED)"),
         reasons: screenplayPagination,
       },
@@ -228,10 +216,6 @@ describe("normalizePhysicalText", () => {
       {
         line: findLine(markedPhysicalText, 4, "4."),
         reasons: sourcePageNumber,
-      },
-      {
-        line: findLine(markedPhysicalText, 4, "REVIEW COPY"),
-        reasons: recurringArtifact,
       },
       {
         line: findLine(markedPhysicalText, 4, "(MORE)"),
@@ -262,10 +246,6 @@ describe("normalizePhysicalText", () => {
         reasons: screenplayPagination,
       },
       {
-        line: findLine(markedPhysicalText, 5, "REVIEW COPY"),
-        reasons: recurringArtifact,
-      },
-      {
         line: findLine(markedPhysicalText, 5, "FEATHERWEIGHT TEST"),
         reasons: recurringArtifact,
       },
@@ -284,10 +264,6 @@ describe("normalizePhysicalText", () => {
       {
         line: findLine(markedPhysicalText, 6, "6."),
         reasons: sourcePageNumber,
-      },
-      {
-        line: findLine(markedPhysicalText, 6, "REVIEW COPY"),
-        reasons: recurringArtifact,
       },
       {
         line: findLine(markedPhysicalText, 6, "FEATHERWEIGHT TEST"),
@@ -313,13 +289,27 @@ describe("normalizePhysicalText", () => {
       markedResult,
       expectedMarkedSuppressed,
     );
-    expect(orderedNonWhitespaceTokens(activeLines(markedResult))).toEqual(
+    expect(
+      activeLines(markedResult).filter((line) => line.text === "REVIEW COPY"),
+    ).toHaveLength(6);
+    expect(orderedNonWhitespaceTokens(activeLines(markedResult))).not.toEqual(
       orderedNonWhitespaceTokens(activeLines(cleanResult)),
     );
     expectOrderedPages(cleanResult, [0, 1, 2, 3, 4, 5, 6]);
     expectOrderedPages(markedResult, [0, 1, 2, 3, 4, 5, 6]);
     expect(cleanResult.diagnostics).toEqual([]);
-    expect(markedResult.diagnostics).toEqual([]);
+    expect(markedResult.diagnostics).toEqual(
+      [1, 2, 3, 4, 5, 6].map((pageIndex) => {
+        const line = findLine(markedPhysicalText, pageIndex, "REVIEW COPY");
+
+        return {
+          code: "AMBIGUOUS_PAGE_ARTIFACT",
+          pageIndex,
+          sourceIndexes: line.spans.map((span) => span.sourceIndex),
+          candidateReasons: ["recurring-page-artifact"],
+        };
+      }),
+    );
   });
 
   it("removes only source page numbers from Brick & Steel", () => {
