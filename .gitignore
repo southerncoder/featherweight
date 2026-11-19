@@ -67,3 +67,6 @@ temp/
 # Local agent guidance
 /AGENTS.md
 /CLAUDE.md
+
+# Rust build output
+/rust/target/
