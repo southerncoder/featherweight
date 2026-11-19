@@ -4,6 +4,9 @@
 
 use thiserror::Error;
 
+pub mod coordinate_evidence;
+pub mod layout_evidence;
+pub mod normalized_text;
 pub mod model;
 pub mod recognition;
 pub mod screenplay;
