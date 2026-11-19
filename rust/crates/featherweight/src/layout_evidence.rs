@@ -26,11 +26,11 @@ pub fn infer_layout_evidence(lines: &[PhysicalTextLine]) -> ScreenplayLayoutEvid
     let trans_xs: Vec<f64> = lines.iter().map(|l| l.x + l.width).collect();
     let paren_xs: Vec<f64> = lines.iter().filter(|l| l.text.trim().starts_with('(')).map(|l| l.x).collect();
     ScreenplayLayoutEvidence {
-        action: resolve_coordinate_evidence(action_xs, tol),
-        character_cue: resolve_coordinate_evidence(char_xs, tol),
-        dialogue: resolve_coordinate_evidence(lines.iter().map(|l| l.x).collect::<Vec<_>>(), tol),
-        parenthetical: resolve_coordinate_evidence(paren_xs, tol),
-        transition: resolve_coordinate_evidence(trans_xs, tol),
+        action: resolve_coordinate_evidence(&action_xs, tol),
+        character_cue: resolve_coordinate_evidence(&char_xs, tol),
+        dialogue: resolve_coordinate_evidence(&lines.iter().map(|l| l.x).collect::<Vec<_>>(), tol),
+        parenthetical: resolve_coordinate_evidence(&paren_xs, tol),
+        transition: resolve_coordinate_evidence(&trans_xs, tol),
         dual_dialogue: None,
     }
 }
