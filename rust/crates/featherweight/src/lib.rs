@@ -12,6 +12,7 @@ pub mod dialogue_occurrences;
 pub mod transition_evidence;
 pub mod screenplay_text;
 pub mod pdf_normalization;
+pub mod page_extents;
 pub mod model;
 pub mod recognition;
 pub mod screenplay;
