@@ -387,3 +387,26 @@ mod tests {
         assert!(is_scene_heading("OPENING TITLES"));
     }
 }
+
+pub fn retain_body_action_evidence(lines: &[PhysicalTextLine], tol: f64) -> Vec<PhysicalTextLine> {
+    if lines.is_empty() { return lines.to_vec(); }
+    let earliest = lines.iter().map(|l| l.page_index).min().unwrap();
+    let first: Vec<&PhysicalTextLine> = lines.iter().filter(|l| l.page_index == earliest).collect();
+    let later: Vec<&PhysicalTextLine> = lines.iter().filter(|l| l.page_index != earliest).collect();
+    if later.is_empty() || !first.iter().all(|l| crate::screenplay_text::is_uppercase_text(&l.text)) {
+        return lines.to_vec();
+    }
+    // cluster first page xs
+    let mut sorted: Vec<f64> = first.iter().map(|l| l.x).collect();
+    sorted.sort_by(|a,b| a.partial_cmp(b).unwrap());
+    let mut clusters: Vec<Vec<f64>> = Vec::new();
+    for v in sorted {
+        if clusters.is_empty() || v - clusters.last().unwrap().last().copied().unwrap() > tol {
+            clusters.push(vec![v]);
+        } else { clusters.last_mut().unwrap().push(v); }
+    }
+    if clusters.len() != 1 { return lines.to_vec(); }
+    let origin = clusters[0].iter().sum::<f64>() / clusters[0].len() as f64;
+    let continues = later.iter().any(|l| (l.x - origin).abs() <= tol);
+    if continues { lines.to_vec() } else { later.into_iter().cloned().collect() }
+}
