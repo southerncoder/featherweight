@@ -9,6 +9,7 @@ pub mod layout_evidence;
 pub mod normalized_text;
 pub mod screenplay_sequences;
 pub mod dialogue_occurrences;
+pub mod transition_evidence;
 pub mod model;
 pub mod recognition;
 pub mod screenplay;
