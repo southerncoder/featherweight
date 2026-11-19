@@ -9,7 +9,7 @@ Implemented:
 - JSON document types: `screenplay::ScreenplayDocument`, elements, title fields, styled runs
 
 Not yet ported:
-- normalized text (`src/pdf/normalization/physical-text.ts`)
+- normalized text (`src/pdf/normalization/physical-text.ts`) — skeleton ported
 - layout inference (`src/core/layout/*`)
 - recognition modules: title page, scene headings, action collection, dialogue occurrences, dual dialogue, sequences, transitions, centered action
 - styled text conversion and sentence spacing
