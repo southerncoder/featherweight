@@ -24,6 +24,7 @@ pub mod styled_text;
 pub mod action_lines;
 pub mod centered_action;
 pub mod page_artifact_text;
+pub mod page_artifact_decisions;
 pub mod model;
 pub mod recognition;
 pub mod screenplay;
