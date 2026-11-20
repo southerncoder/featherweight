@@ -280,7 +280,13 @@ fn infer_layout(lines: &[PhysicalTextLine]) -> (f64, f64, f64, f64) {
 pub fn recognize(physical: &PhysicalText) -> (Vec<TitleField>, Vec<ScreenplayElement>) {
     let (title_fields, body_lines, unattributed) = title_page_extraction(&physical.lines);
 
-    let (ax, dx, cx, tx) = infer_layout(&body_lines);
+    let pages: Vec<usize> = physical.lines.iter().map(|l| l.page_index).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+    let normalized = crate::pdf_normalization::normalize_physical_text(&physical.lines, &pages);
+    let layout = crate::infer_screenplay_layout::infer_screenplay_layout(&normalized);
+    let ax = layout.action.as_ref().map(|a| a.x).unwrap_or(108.0);
+    let dx = layout.dialogue.as_ref().map(|a| a.x).unwrap_or(180.0);
+    let cx = layout.character_cue.as_ref().map(|a| a.x).unwrap_or(252.0);
+    let tx = layout.transition.as_ref().map(|a| a.x).unwrap_or(450.0);
 
     let mut elements = Vec::new();
     let mut i = 0;
