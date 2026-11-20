@@ -52,106 +52,159 @@ fn is_character_cue(text: &str) -> bool {
         && t.len() <= 45
 }
 
-fn title_page_extraction(lines: &[PhysicalTextLine]) -> (Vec<TitleField>, Vec<PhysicalTextLine>) {
-    let first_page = lines.first().map(|l| l.page_index).unwrap_or(0);
-    if first_page != 0 { return (Vec::new(), lines.to_vec()); }
-    // later page scene heading?
-    let has_later_scene = lines.iter().any(|l| l.page_index != 0 && is_scene_heading(&l.text));
-    if !has_later_scene { return (Vec::new(), lines.to_vec()); }
+fn title_page_extraction(lines: &[PhysicalTextLine]) -> (Vec<TitleField>, Vec<PhysicalTextLine>, Vec<PhysicalTextLine>) {
+    if lines.is_empty() { return (Vec::new(), lines.to_vec(), Vec::new()); }
+    let first_page_index = lines[0].page_index;
+    if first_page_index != 0 { return (Vec::new(), lines.to_vec(), Vec::new()); }
 
-    let first_page_lines: Vec<PhysicalTextLine> = lines.iter().filter(|l| l.page_index == 0).cloned().collect();
-    let body_lines: Vec<PhysicalTextLine> = lines.iter().filter(|l| l.page_index != 0).cloned().collect();
+    let first_page_lines: Vec<PhysicalTextLine> = lines.iter().filter(|l| l.page_index == first_page_index).cloned().collect();
+    let body_lines: Vec<PhysicalTextLine> = lines.iter().filter(|l| l.page_index != first_page_index).cloned().collect();
+    let is_separate = !first_page_lines.is_empty() && !body_lines.is_empty() && body_lines.iter().any(|l| is_scene_heading(&l.text));
+    if !is_separate { return (Vec::new(), lines.to_vec(), Vec::new()); }
 
-    // footer start by largest vertical gap
-    let mut footer_start = first_page_lines.len();
+    let fields = recognize_conventional_title_page(&first_page_lines, 4.0);
+    if fields.is_none() {
+        return (Vec::new(), lines.to_vec(), first_page_lines);
+    }
+    (fields.unwrap(), body_lines, Vec::new())
+}
+
+fn recognize_conventional_title_page(lines: &[PhysicalTextLine], _tol: f64) -> Option<Vec<TitleField>> {
+    let footer_start = find_title_footer_start_index(lines);
+    let upper_lines = &lines[..footer_start];
+    let footer_lines = &lines[footer_start..];
+    let upper_fields = recognize_upper_title_fields(upper_lines);
+    let mut footer_fields = recognize_footer_title_fields(footer_lines);
+    if upper_fields.is_empty() && footer_fields.is_empty() && footer_start == lines.len() {
+        footer_fields = recognize_footer_title_fields(lines);
+    }
+    let mut fields = Vec::new();
+    fields.extend(upper_fields);
+    fields.extend(footer_fields);
+    if fields.is_empty() { None } else { Some(fields) }
+}
+
+fn find_title_footer_start_index(lines: &[PhysicalTextLine]) -> usize {
     let mut largest_gap = 0.0;
-    for i in 1..first_page_lines.len() {
-        let prev = &first_page_lines[i-1];
-        let cur = &first_page_lines[i];
-        let gap = (cur.y - (prev.y + prev.height)) / prev.height.max(cur.height).max(1.0);
+    let mut footer_start = lines.len();
+    for i in 1..lines.len() {
+        let gap = vertical_gap_in_line_heights(&lines[i - 1], &lines[i]);
         if gap >= 6.0 && gap > largest_gap {
             largest_gap = gap;
             footer_start = i;
         }
     }
-    if footer_start == first_page_lines.len() && (
-        first_page_lines.first().map(|l| is_draft_date(&l.text.trim())).unwrap_or(false) ||
-        first_page_lines.first().map(|l| is_copyright(&l.text.trim())).unwrap_or(false)
-    ) {
-        footer_start = 0;
+    if footer_start == lines.len() && lines.first().map(|l| is_draft_date(&l.text.trim()) || is_copyright(&l.text.trim())).unwrap_or(false) {
+        return 0;
     }
+    footer_start
+}
 
-    let upper_lines = &first_page_lines[..footer_start];
-    let footer_lines = &first_page_lines[footer_start..];
-
-    // upper fields
-    let mut upper_fields: Vec<TitleField> = Vec::new();
-    // credit index
-    let credit_idx = upper_lines.iter().position(|l| conventional_credit(&l.text.trim()));
-    if let Some(ci) = credit_idx {
-        let title_values: Vec<PhysicalTextLine> = upper_lines[..ci].to_vec();
-        if !title_values.is_empty() {
-            upper_fields.push(TitleField { key: "Title".into(), values: title_values.iter().map(styled_from_line).collect() });
-        }
-        let credit_line = &upper_lines[ci];
-        upper_fields.push(TitleField { key: "Credit".into(), values: vec![styled_from_line(credit_line)] });
-        let possible_author = upper_lines.get(ci+1);
-        let has_author = possible_author.map(|a| (a.y - (credit_line.y + credit_line.height)) / credit_line.height.max(1.0) <= 2.5).unwrap_or(false);
-        if has_author {
-            upper_fields.push(TitleField { key: "Author".into(), values: vec![styled_from_line(possible_author.unwrap())] });
-        }
-        let source_start = ci + if has_author { 2 } else { 1 };
-        let source = &upper_lines[source_start..];
-        if !source.is_empty() {
-            upper_fields.push(TitleField { key: "Source".into(), values: source.iter().map(styled_from_line).collect() });
-        }
-    } else if !upper_lines.is_empty() {
-        // no credit: title group adjacent
-        let mut count = 1;
-        while count < upper_lines.len() {
-            let prev = &upper_lines[count-1];
-            let cur = &upper_lines[count];
-            let gap = (cur.y - (prev.y + prev.height)) / prev.height.max(1.0);
-            if gap <= 1.8 { count += 1; } else { break; }
-        }
-        upper_fields.push(TitleField { key: "Title".into(), values: upper_lines[..count].iter().map(styled_from_line).collect() });
+fn recognize_upper_title_fields(lines: &[PhysicalTextLine]) -> Vec<TitleField> {
+    if lines.is_empty() { return Vec::new(); }
+    let first = &lines[0];
+    for line in lines {
+        if !have_matching_centers(first, line, 4.0) { return Vec::new(); }
     }
-
-    // footer fields
-    let mut footer_fields: Vec<TitleField> = Vec::new();
-    let mut contact_candidate: Vec<PhysicalTextLine> = Vec::new();
-    let mut copyright_line: Option<PhysicalTextLine> = None;
-    let mut draft_date_line: Option<PhysicalTextLine> = None;
-    for l in footer_lines {
-        let t = l.text.trim();
-        if is_draft_date(t) { draft_date_line = Some(l.clone()); }
-        else if is_copyright(t) { copyright_line = Some(l.clone()); }
-        else { contact_candidate.push(l.clone()); }
-    }
-    if let Some(dd) = &draft_date_line {
-        footer_fields.push(TitleField { key: "Draft date".into(), values: vec![styled_from_line(dd)] });
-    }
-    if !contact_candidate.is_empty() {
-        // decide contact vs notes: if draft date present, contact; else notes if right-aligned? Use contact
-        if draft_date_line.is_some() {
-            footer_fields.push(TitleField { key: "Contact".into(), values: contact_candidate.iter().map(styled_from_line).collect() });
-        } else {
-            footer_fields.push(TitleField { key: "Notes".into(), values: contact_candidate.iter().map(styled_from_line).collect() });
+    let credit_idx = lines.iter().position(|l| conventional_credit(&l.text.trim()));
+    if credit_idx.is_none() {
+        let mut count = 1usize;
+        while count < lines.len() {
+            let prev = &lines[count - 1];
+            let cur = &lines[count];
+            if are_vertically_adjacent(prev, cur, 1.5) { count += 1; } else { break; }
         }
+        return vec![create_title_field("Title", &lines[..count])];
     }
-    if let Some(c) = &copyright_line {
-        footer_fields.push(TitleField { key: "Copyright".into(), values: vec![styled_from_line(c)] });
-    }
-
-    // if no upper/foot fields, mark unattributed (return original lines) - but we assume recognized
+    let ci = credit_idx.unwrap();
     let mut fields = Vec::new();
-    fields.extend(upper_fields);
-    fields.extend(footer_fields);
+    let title_values = &lines[..ci];
+    let credit = &lines[ci];
+    let possible_author = lines.get(ci + 1);
+    let has_author = possible_author.map(|a| vertical_gap_in_line_heights(credit, a) <= 2.5).unwrap_or(false);
+    let source_start = ci + if has_author { 2 } else { 1 };
+    let source = &lines[source_start..];
+    if !title_values.is_empty() { fields.push(create_title_field("Title", title_values)); }
+    fields.push(create_title_field("Credit", std::slice::from_ref(credit)));
+    if has_author { fields.push(create_title_field("Author", std::slice::from_ref(possible_author.unwrap()))); }
+    if !source.is_empty() { fields.push(create_title_field("Source", source)); }
+    fields
+}
 
-    if fields.is_empty() {
-        return (Vec::new(), lines.to_vec());
+fn have_matching_centers(left: &PhysicalTextLine, right: &PhysicalTextLine, tol: f64) -> bool {
+    let tolerance = tol.max(left.height.min(right.height) / 2.0);
+    (line_center(left) - line_center(right)).abs() <= tolerance
+}
+
+fn recognize_footer_title_fields(lines: &[PhysicalTextLine]) -> Vec<TitleField> {
+    if lines.is_empty() { return Vec::new(); }
+    if let Some((notes, copyright)) = recognize_independent_footer(lines) {
+        return vec![create_title_field("Notes", &notes), create_title_field("Copyright", &[copyright])];
     }
-    (fields, body_lines)
+    let mut fields = Vec::new();
+    let copyright_index = lines.iter().position(|l| is_copyright(&l.text.trim()));
+    let copyright = copyright_index.map(|i| lines[i].clone());
+    let conventional: Vec<PhysicalTextLine> = lines.iter().enumerate().filter(|(i, _)| Some(*i) != copyright_index).map(|(_, l)| l.clone()).collect();
+    let has_draft_date = conventional.first().map(|l| is_draft_date(&l.text.trim())).unwrap_or(false);
+    let contact_candidate: Vec<PhysicalTextLine> = if has_draft_date { conventional[1..].to_vec() } else { conventional.clone() };
+    let origin_tol = conventional.first().map(|l| l.height).unwrap_or(1.0).max(1.0);
+    let has_matching_origins = contact_candidate.is_empty() || contact_candidate.iter().all(|l| (l.x - contact_candidate[0].x).abs() <= origin_tol);
+    let has_matching_right_edges = contact_candidate.is_empty() || contact_candidate.iter().all(|l| ((l.x + l.width) - (contact_candidate[0].x + contact_candidate[0].width)).abs() <= origin_tol);
+    let has_adjacent = contact_candidate.len() <= 1 || contact_candidate.windows(2).all(|w| are_vertically_adjacent(&w[0], &w[1], 1.5));
+    let draft_gap_ok = if has_draft_date && !contact_candidate.is_empty() {
+        let g = vertical_gap_in_line_heights(&conventional[0], &contact_candidate[0]);
+        g >= 0.75 && g <= 2.5
+    } else { true };
+    let has_supported = if has_draft_date {
+        contact_candidate.is_empty() || (draft_gap_ok && has_matching_origins && has_adjacent)
+    } else {
+        contact_candidate.len() > 1 && has_matching_origins && has_adjacent
+    };
+    let contact = if has_supported { contact_candidate.clone() } else { Vec::new() };
+    if has_draft_date { fields.push(create_title_field("Draft date", std::slice::from_ref(&conventional[0]))); }
+    if !contact.is_empty() { fields.push(create_title_field("Contact", &contact)); }
+    else if !has_draft_date && copyright.is_none() && contact_candidate.len() > 1 && has_matching_right_edges && has_adjacent {
+        fields.push(create_title_field("Notes", &contact_candidate));
+    }
+    if let Some(c) = copyright { fields.push(create_title_field("Copyright", &[c])); }
+    fields
+}
+
+fn recognize_independent_footer(lines: &[PhysicalTextLine]) -> Option<(Vec<PhysicalTextLine>, PhysicalTextLine)> {
+    if lines.len() < 2 { return None; }
+    let copyright = lines.last().cloned().unwrap();
+    if !is_copyright(&copyright.text.trim()) { return None; }
+    let notes = lines[..lines.len() - 1].to_vec();
+    if notes.is_empty() { return None; }
+    let right_edge_tol = 4.0f64.max(notes[0].height / 2.0);
+    let notes_right_edge = notes[0].x + notes[0].width;
+    let has_right_aligned = notes.iter().all(|l| ((l.x + l.width) - notes_right_edge).abs() <= right_edge_tol)
+        && notes.windows(2).all(|w| are_vertically_adjacent(&w[0], &w[1], 1.5));
+    let footer_gap = vertical_gap_in_line_heights(notes.last().unwrap(), &copyright);
+    let is_independent = footer_gap >= 2.0 && footer_gap <= 5.0
+        && (copyright.x - notes[0].x).abs() > right_edge_tol;
+    if has_right_aligned && is_independent { Some((notes, copyright)) } else { None }
+}
+
+fn create_title_field(key: &str, lines: &[PhysicalTextLine]) -> TitleField {
+    TitleField { key: key.to_string(), values: lines.iter().map(styled_from_line).collect() }
+}
+
+fn line_center(line: &PhysicalTextLine) -> f64 {
+    line.x + line.width / 2.0
+}
+
+fn vertical_gap_in_line_heights(upper: &PhysicalTextLine, lower: &PhysicalTextLine) -> f64 {
+    let height = upper.height.max(lower.height);
+    if height <= 0.0 { return 0.0; }
+    (upper.y - lower.y) / height
+}
+
+fn are_vertically_adjacent(upper: &PhysicalTextLine, lower: &PhysicalTextLine, mult: f64) -> bool {
+    if upper.page_index != lower.page_index { return false; }
+    let gap = upper.y - lower.y;
+    let height = upper.height.max(lower.height);
+    gap > 0.0 && gap <= height * mult
 }
 
 fn is_draft_date(s: &str) -> bool {
@@ -225,7 +278,7 @@ fn infer_layout(lines: &[PhysicalTextLine]) -> (f64, f64, f64, f64) {
 }
 
 pub fn recognize(physical: &PhysicalText) -> (Vec<TitleField>, Vec<ScreenplayElement>) {
-    let (title_fields, body_lines) = title_page_extraction(&physical.lines);
+    let (title_fields, body_lines, unattributed) = title_page_extraction(&physical.lines);
 
     let (ax, dx, cx, tx) = infer_layout(&body_lines);
 
@@ -284,6 +337,7 @@ pub fn recognize(physical: &PhysicalText) -> (Vec<TitleField>, Vec<ScreenplayEle
             }
         }
 
+        if unattributed.iter().any(|u| std::ptr::eq(u, &body_lines[i])) { i += 1; continue; }
         let line = &body_lines[i];
         let t = line.text.trim();
         let candidate = if is_scene_heading(t) {
