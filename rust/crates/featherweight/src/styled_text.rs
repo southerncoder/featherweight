@@ -40,13 +40,14 @@ fn append_run(runs: &mut Vec<Run>, text: &str, styles: Vec<String>) {
     runs.push(Run { text: text.to_string(), styles });
 }
 
-pub fn create_styled_text(lines: &[PhysicalTextLine], line_joins: &str, conv: SentenceSpacingConvention) -> StyledText {
+pub fn create_styled_text(lines: &[PhysicalTextLine], line_joins: &[&str], conv: SentenceSpacingConvention) -> StyledText {
     // supports single join strategy "wrap"/"newline" for simplicity
     let mut runs = Vec::new();
     for (idx, line) in lines.iter().enumerate() {
         if idx > 0 {
             let prev_line = &lines[idx - 1];
-            let separator = create_line_separator(prev_line, line, line_joins, conv);
+                        let join = if line_joins.len() == 1 { line_joins[0] } else if line_joins.len() >= idx { line_joins[idx - 1] } else { "wrap" };
+            let separator = create_line_separator(prev_line, line, join, conv);
             if !separator.is_empty() {
                 let sep_styles = separator_styles(prev_line, line);
                 append_run(&mut runs, &separator, sep_styles);

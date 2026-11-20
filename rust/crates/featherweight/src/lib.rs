@@ -21,6 +21,7 @@ pub mod screenplay_layout;
 pub mod line_measure;
 pub mod sentence_spacing;
 pub mod styled_text;
+pub mod action_lines;
 pub mod model;
 pub mod recognition;
 pub mod screenplay;
