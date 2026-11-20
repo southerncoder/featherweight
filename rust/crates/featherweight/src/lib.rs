@@ -18,6 +18,8 @@ pub mod fountain;
 pub mod fdx;
 pub mod scene_headings;
 pub mod screenplay_layout;
+pub mod line_measure;
+pub mod sentence_spacing;
 pub mod model;
 pub mod recognition;
 pub mod screenplay;
