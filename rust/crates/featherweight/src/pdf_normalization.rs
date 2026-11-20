@@ -12,6 +12,8 @@ pub fn normalize_physical_text(lines: &[PhysicalTextLine], represented: &[usize]
     detect_source_page_numbers(lines, &geometry, &mut suppressed);
     // Explicit pagination markers (MORE/CONTINUED bottom markers and continued headers).
     detect_explicit_pagination_markers(lines, &geometry, &mut suppressed);
+    // Recurring margin artifacts (headers/footers repeated across pages).
+    detect_recurring_artifacts(lines, &geometry, &mut suppressed);
 
     let mut pages: std::collections::BTreeMap<usize, Vec<PhysicalTextLine>> = std::collections::BTreeMap::new();
     for &p in represented { pages.insert(p, Vec::new()); }
@@ -66,3 +68,61 @@ fn detect_explicit_pagination_markers(lines: &[PhysicalTextLine], geom: &crate::
 
 // need page_horizontal_midpoint accessible
 use crate::page_extents::page_horizontal_midpoint;
+#[derive(Clone)]
+struct Frag { text: String, font_size: f64, x: f64, y: f64, line_index: usize }
+
+fn detect_recurring_artifacts(lines: &[PhysicalTextLine], geom: &crate::page_extents::PageExtentMeasurements, suppressed: &mut [bool]) {
+    if lines.is_empty() { return; }
+    let doc_pages = lines.iter().map(|l| l.page_index).collect::<std::collections::BTreeSet<_>>().len();
+    // group fragments by text
+    let mut by_text: std::collections::BTreeMap<String, Vec<Frag>> = std::collections::BTreeMap::new();
+    for (i, l) in lines.iter().enumerate() {
+        let text = l.text.trim().to_string();
+        if text.len() < 5 { continue; }
+        if is_explicit_pagination_text(&text) { continue; }
+        let f = Frag { text: text.clone(), font_size: l.height, x: l.x, y: l.y, line_index: i };
+        by_text.entry(text).or_default().push(f);
+    }
+    for fragments in by_text.values() {
+        // cluster by stable presentation
+        let mut clusters: Vec<Vec<Frag>> = Vec::new();
+        for f in fragments {
+            if let Some(c) = clusters.iter_mut().find(|c| have_stable_presentation(&c[0], f)) {
+                c.push(f.clone());
+            } else {
+                clusters.push(vec![f.clone()]);
+            }
+        }
+        for cluster in &clusters {
+            // group by page, unambiguous (one per page)
+            let mut by_page: std::collections::BTreeMap<usize, Vec<&Frag>> = std::collections::BTreeMap::new();
+            for f in cluster {
+                by_page.entry(lines[f.line_index].page_index).or_default().push(f);
+            }
+            let unambiguous: Vec<&Frag> = by_page.values().filter(|v| v.len() == 1).map(|v| v[0]).collect();
+            if unambiguous.len() < 3 { continue; }
+            if unambiguous.len() as f64 / doc_pages as f64 <= 0.5 { continue; }
+            for f in unambiguous {
+                let line = &lines[f.line_index];
+                if is_line_in_page_margin_band(line, geom) {
+                    suppressed[f.line_index] = true;
+                }
+            }
+        }
+    }
+}
+
+fn have_stable_presentation(a: &Frag, b: &Frag) -> bool {
+    let tol = a.font_size.max(b.font_size) / 2.0;
+    (a.font_size - b.font_size).abs() <= 0.25
+        && (a.x - b.x).abs() <= tol
+        && (a.y - b.y).abs() <= tol
+}
+
+fn is_explicit_pagination_text(text: &str) -> bool {
+    text == "(MORE)" || text == "(CONTINUED):" || text.contains("CONTINUED")
+}
+
+fn is_line_in_page_margin_band(line: &PhysicalTextLine, geom: &crate::page_extents::PageExtentMeasurements) -> bool {
+    crate::page_extents::is_line_in_top_page_band(line, geom) || crate::page_extents::is_line_in_bottom_page_band(line, geom)
+}
