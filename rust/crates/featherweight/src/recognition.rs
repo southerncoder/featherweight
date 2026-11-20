@@ -224,34 +224,6 @@ fn infer_layout(lines: &[PhysicalTextLine]) -> (f64, f64, f64, f64) {
     (ax, dx, cx, tx)
 }
 
-fn infer_x(lines: &[PhysicalTextLine], idx: usize) -> f64 {
-    use std::collections::BTreeMap;
-    let mut counts: BTreeMap<i64, usize> = BTreeMap::new();
-    for l in lines {
-        *counts.entry((l.x / 4.0).round() as i64).or_insert(0) += 1;
-    }
-    let mut frequent: Vec<(i64, usize)> = counts.into_iter().filter(|(_, c)| *c >= 3).collect();
-    frequent.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    // take distinct top positions
-    let mut xs: Vec<f64> = Vec::new();
-    for (xb, _) in &frequent {
-        let x = *xb as f64 * 4.0;
-        if xs.iter().all(|prev| (prev - x).abs() > 20.0) {
-            xs.push(x);
-        }
-        if xs.len() >= 6 { break; }
-    }
-    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    if xs.is_empty() {
-        return 108.0;
-    }
-    if idx < xs.len() {
-        xs[idx]
-    } else {
-        *xs.last().unwrap()
-    }
-}
-
 pub fn recognize(physical: &PhysicalText) -> (Vec<TitleField>, Vec<ScreenplayElement>) {
     let (title_fields, body_lines) = title_page_extraction(&physical.lines);
 
@@ -346,7 +318,7 @@ pub fn recognize(physical: &PhysicalText) -> (Vec<TitleField>, Vec<ScreenplayEle
         let can_merge = if candidate_kind == "action" && last_kind == "action" {
             if let Some(prev) = prev_physical {
                 let gap = (prev.y - body_lines[i].y).abs() / prev.height.max(body_lines[i].height).max(1.0);
-                gap <= 1.8
+                gap <= 2.5
             } else {
                 true
             }
@@ -358,10 +330,12 @@ pub fn recognize(physical: &PhysicalText) -> (Vec<TitleField>, Vec<ScreenplayEle
             let prev = elements.pop().unwrap();
             let merged = match (prev, candidate) {
                 (ScreenplayElement::Action { mut text, alignment }, ScreenplayElement::Action { text: t, .. }) => {
+                    text.runs.push(crate::screenplay::StyledRun { text: " ".to_string(), styles: Vec::new() });
                     text.runs.extend(t.runs);
                     ScreenplayElement::Action { text, alignment }
                 }
                 (ScreenplayElement::Dialogue { mut text }, ScreenplayElement::Dialogue { text: t }) => {
+                    text.runs.push(crate::screenplay::StyledRun { text: " ".to_string(), styles: Vec::new() });
                     text.runs.extend(t.runs);
                     ScreenplayElement::Dialogue { text }
                 }
