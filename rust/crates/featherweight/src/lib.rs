@@ -16,6 +16,8 @@ pub mod page_extents;
 pub mod sequence_geometry;
 pub mod fountain;
 pub mod fdx;
+pub mod scene_headings;
+pub mod screenplay_layout;
 pub mod model;
 pub mod recognition;
 pub mod screenplay;
