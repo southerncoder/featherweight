@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,17 +8,25 @@ import { promisify } from "node:util";
 import { expect, test } from "vitest";
 
 const executeFile = promisify(execFile);
+const executeCommand = promisify(exec);
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 test("packs only the supported distribution and project documentation", async () => {
   const npmCache = await mkdtemp(join(tmpdir(), "featherweight-npm-cache-"));
 
   try {
-    const { stdout } = await executeFile(
-      process.platform === "win32" ? "npm.cmd" : "npm",
-      ["pack", "--dry-run", "--json", "--cache", npmCache],
-      { cwd: repositoryRoot, encoding: "utf8" },
-    );
+    // Node refuses to spawn Windows .cmd shims without a shell (CVE-2024-27980),
+    // so on Windows run npm through one, as a single quoted command string.
+    const { stdout } =
+      process.platform === "win32"
+        ? await executeCommand(`npm pack --dry-run --json --cache "${npmCache}"`, {
+            cwd: repositoryRoot,
+            encoding: "utf8",
+          })
+        : await executeFile("npm", ["pack", "--dry-run", "--json", "--cache", npmCache], {
+            cwd: repositoryRoot,
+            encoding: "utf8",
+          });
     const packResults = JSON.parse(stdout) as readonly PackResult[];
     const packResult = packResults[0];
 

@@ -51,23 +51,30 @@ export function createStyledText(
       }
     }
 
-    let previousSpanEnd = 0;
+    // Whitespace at a line's edges is layout (indentation, padding), not text;
+    // line separators account for it.
+    const visibleStart = line.text.length - line.text.trimStart().length;
+    const visibleEnd = line.text.trimEnd().length;
+    let previousSpanEnd = visibleStart;
 
     for (const [spanIndex, span] of line.spans.entries()) {
-      if (span.start > previousSpanEnd) {
+      const start = Math.max(span.start, visibleStart);
+      const end = Math.min(span.end, visibleEnd);
+
+      if (end <= start) {
+        continue;
+      }
+
+      if (start > previousSpanEnd) {
         appendRun(
           runs,
-          line.text.slice(previousSpanEnd, span.start),
+          line.text.slice(previousSpanEnd, start),
           separatorStylesForSpans(line.spans[spanIndex - 1], span),
         );
       }
 
-      appendRun(
-        runs,
-        line.text.slice(span.start, span.end),
-        stylesForSpan(span),
-      );
-      previousSpanEnd = span.end;
+      appendRun(runs, line.text.slice(start, end), stylesForSpan(span));
+      previousSpanEnd = end;
     }
   }
 
@@ -122,21 +129,17 @@ function createLineSeparator(
   const trailingWhitespace = /\s+$/u.exec(previousLine.text)?.[0] ?? "";
   const leadingWhitespace = /^\s+/u.exec(line.text)?.[0] ?? "";
 
-  if (
-    sentenceSpacingConvention !== null &&
-    isSentenceBoundary(previousLine.text, line.text) &&
-    trailingWhitespace.length + leadingWhitespace.length > 0
-  ) {
-    const retainedSpacing =
-      trailingWhitespace.length + leadingWhitespace.length;
+  const retainedSpacing = trailingWhitespace.length + leadingWhitespace.length;
 
-    return " ".repeat(
-      Math.max(0, sentenceSpacingConvention - retainedSpacing),
-    );
-  }
+  // Whitespace at the join: at a sentence boundary it shows the writer's
+  // sentence spacing; anywhere else it is a single word space (text-formatted
+  // PDFs pad line ends with spaces).
+  if (retainedSpacing > 0) {
+    if (isSentenceBoundary(previousLine.text, line.text)) {
+      return " ".repeat(sentenceSpacingConvention ?? retainedSpacing);
+    }
 
-  if (trailingWhitespace !== "" || leadingWhitespace !== "") {
-    return "";
+    return " ";
   }
 
   if (
