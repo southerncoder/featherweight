@@ -1,11 +1,20 @@
 [package]
 name = "featherweight"
+description = "Turn a screenplay PDF into Fountain, FDX, or structured JSON."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+repository = "https://github.com/bantamhq/featherweight"
+readme = "../../PORTING.md"
+# Integration tests read fixtures from the repository root.
+exclude = ["tests"]
+keywords = ["screenplay", "fountain", "fdx", "pdf", "final-draft"]
+categories = ["parser-implementations", "text-processing"]
 
 [dependencies]
-pdf_oxide = { workspace = true }
+pdf-inspector = { workspace = true }
+regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
