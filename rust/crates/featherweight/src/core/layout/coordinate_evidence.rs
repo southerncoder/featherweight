@@ -122,6 +122,7 @@ pub fn cluster_coordinates(values: &[f64], coordinate_tolerance: f64) -> Vec<Coo
 
     for value in sorted_values {
         let starts_new_cluster = clusters.last().is_none_or(|current_cluster| {
+            // invariant: every cluster is created with one value and only grows.
             value - current_cluster.values.last().expect("clusters are never empty") > coordinate_tolerance
         });
 
@@ -146,6 +147,7 @@ fn cluster_page_coordinates(
 
     for observation in sorted_observations {
         let starts_new_cluster = clusters.last().is_none_or(|current_cluster| {
+            // invariant: every cluster is created with one observation and only grows.
             observation.x - current_cluster.last().expect("clusters are never empty").x > coordinate_tolerance
         });
 

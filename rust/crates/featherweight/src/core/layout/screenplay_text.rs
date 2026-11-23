@@ -3,9 +3,10 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use crate::core::text::constant_regex;
 use crate::core::text::{js_trim, js_trim_end};
 
-static LETTER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\p{L}").expect("valid letter regex"));
+static LETTER: LazyLock<Regex> = LazyLock::new(|| constant_regex(r"\p{L}"));
 
 /// `isUppercaseText`: at least two letters (`/\p{L}/gu` matches) and every
 /// letter equals its upper-case form.

@@ -54,10 +54,11 @@ pub fn split_styled_text_lines(text: &StyledText) -> Vec<StyledText> {
 
         for (part_index, part) in parts.iter().enumerate() {
             if !part.is_empty() {
-                lines
-                    .last_mut()
-                    .expect("lines is never empty")
-                    .push(TextRun { text: (*part).to_owned(), styles: run.styles.clone() });
+                // invariant: `lines` starts with one entry and only grows.
+                lines.last_mut().expect("lines is never empty").push(TextRun {
+                    text: (*part).to_owned(),
+                    styles: run.styles.clone(),
+                });
             }
 
             if part_index < parts.len() - 1 {
@@ -71,7 +72,12 @@ pub fn split_styled_text_lines(text: &StyledText) -> Vec<StyledText> {
 
 /// Port of `plainStyledText`.
 pub fn plain_styled_text(value: &str) -> StyledText {
-    StyledText { runs: vec![TextRun { text: value.to_owned(), styles: Vec::new() }] }
+    StyledText {
+        runs: vec![TextRun {
+            text: value.to_owned(),
+            styles: Vec::new(),
+        }],
+    }
 }
 
 /// Port of `escapeXml`: escapes `&`, `<`, `>`, `"` and `'`.
@@ -115,8 +121,11 @@ fn serialize_run(run: &TextRun, added_styles: &[TextStyle]) -> String {
         .filter(|style| run.styles.contains(style) || added_styles.contains(style))
         .map(fdx_style_name)
         .collect();
-    let style_attribute =
-        if styles.is_empty() { String::new() } else { format!(" Style=\"{}\"", styles.join("+")) };
+    let style_attribute = if styles.is_empty() {
+        String::new()
+    } else {
+        format!(" Style=\"{}\"", styles.join("+"))
+    };
     let text = escape_xml(&normalize_line_endings(&run.text));
 
     format!("<Text{style_attribute}>{text}</Text>")

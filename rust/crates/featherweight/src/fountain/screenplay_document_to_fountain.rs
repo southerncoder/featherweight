@@ -1,27 +1,24 @@
 //! Port of `src/fountain/screenplay-document-to-fountain.ts`.
+use crate::core::text::constant_regex;
 use std::sync::LazyLock;
 
 use regex::Regex;
 
 use crate::core::screenplay_document::{
-    ActionAlignment, Character, DialogueContent, DialogueSequence, ScreenplayDocument,
-    ScreenplayElement, StyledText, TitlePageField,
+    ActionAlignment, Character, DialogueContent, DialogueSequence, ScreenplayDocument, ScreenplayElement, StyledText,
+    TitlePageField,
 };
 use crate::core::text::{js_trim, js_trim_start};
 
-use super::styled_text_to_fountain::{
-    rendered_text, styled_text_to_fountain, unstyled_text_to_fountain,
-};
+use super::styled_text_to_fountain::{rendered_text, styled_text_to_fountain, unstyled_text_to_fountain};
 
 /// The alternatives of `automaticSceneHeadingPattern`
 /// (`/^(?:INT\.\/EXT|INT\/EXT|INT|EXT|EST|I\/E)(?:[. ])/i`).
 const AUTOMATIC_SCENE_HEADING_PREFIXES: [&str; 6] = ["INT./EXT", "INT/EXT", "INT", "EXT", "EST", "I/E"];
 
-static LETTER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\p{L}").unwrap());
-static TITLE_SHAPED: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[\p{L}\p{N} _-]+:").unwrap());
-static FORCED_SCENE_HEADING_SHAPED: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\.[\p{L}\p{N}]").unwrap());
+static LETTER: LazyLock<Regex> = LazyLock::new(|| constant_regex(r"\p{L}"));
+static TITLE_SHAPED: LazyLock<Regex> = LazyLock::new(|| constant_regex(r"^[\p{L}\p{N} _-]+:"));
+static FORCED_SCENE_HEADING_SHAPED: LazyLock<Regex> = LazyLock::new(|| constant_regex(r"^\.[\p{L}\p{N}]"));
 
 /// Port of `screenplayDocumentToFountain`: serializes a document to Fountain
 /// text, adding force markers only where automatic recognition would misread
@@ -44,7 +41,11 @@ pub fn screenplay_document_to_fountain(document: &ScreenplayDocument) -> String 
 }
 
 fn serialize_title_page(fields: &[TitlePageField]) -> String {
-    fields.iter().map(serialize_title_page_field).collect::<Vec<_>>().join("\n")
+    fields
+        .iter()
+        .map(serialize_title_page_field)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn serialize_title_page_field(field: &TitlePageField) -> String {
@@ -76,7 +77,7 @@ fn serialize_body(elements: &[ScreenplayElement], body_starts_document: bool) ->
     while element_index < elements.len() {
         let element = &elements[element_index];
 
-        if let ScreenplayElement::Character { text } = element {
+        if let ScreenplayElement::Character { text, .. } = element {
             let mut dialogue_lines = vec![serialize_character(text, false)];
 
             while let Some(content) = elements.get(element_index + 1).and_then(dialogue_content) {
@@ -99,34 +100,35 @@ fn serialize_body(elements: &[ScreenplayElement], body_starts_document: bool) ->
 /// top-level element.
 fn dialogue_content(element: &ScreenplayElement) -> Option<String> {
     match element {
-        ScreenplayElement::Parenthetical { text } => Some(serialize_parenthetical(text)),
-        ScreenplayElement::Dialogue { text } => Some(serialize_dialogue(text)),
+        ScreenplayElement::Parenthetical { text, .. } => Some(serialize_parenthetical(text)),
+        ScreenplayElement::Dialogue { text, .. } => Some(serialize_dialogue(text)),
         _ => None,
     }
 }
 
 fn serialize_element(element: &ScreenplayElement, starts_document: bool) -> String {
     match element {
-        ScreenplayElement::SceneHeading { text, scene_number } => {
+        ScreenplayElement::SceneHeading { text, scene_number, .. } => {
             serialize_scene_heading(text, scene_number.as_deref())
         }
-        ScreenplayElement::Action { text, alignment } => {
-            serialize_action(text, *alignment, starts_document)
-        }
-        ScreenplayElement::Character { text } => serialize_character(text, false),
-        ScreenplayElement::Parenthetical { text } => serialize_parenthetical(text),
-        ScreenplayElement::Dialogue { text } => serialize_dialogue(text),
-        ScreenplayElement::DualDialogue { left, right } => serialize_dual_dialogue(left, right),
-        ScreenplayElement::Lyric { text } => serialize_lyric(text),
-        ScreenplayElement::Transition { text } => serialize_transition(text),
+        ScreenplayElement::Action { text, alignment, .. } => serialize_action(text, *alignment, starts_document),
+        ScreenplayElement::Character { text, .. } => serialize_character(text, false),
+        ScreenplayElement::Parenthetical { text, .. } => serialize_parenthetical(text),
+        ScreenplayElement::Dialogue { text, .. } => serialize_dialogue(text),
+        ScreenplayElement::DualDialogue { left, right, .. } => serialize_dual_dialogue(left, right),
+        ScreenplayElement::Lyric { text, .. } => serialize_lyric(text),
+        ScreenplayElement::Transition { text, .. } => serialize_transition(text),
         ScreenplayElement::PageBreak => "===".to_owned(),
     }
 }
 
 fn serialize_scene_heading(text: &StyledText, scene_number: Option<&str>) -> String {
     let rendered = rendered_text(text);
-    let force_marker =
-        if is_automatic_scene_heading(&rendered) || rendered.starts_with('.') { "" } else { "." };
+    let force_marker = if is_automatic_scene_heading(&rendered) || rendered.starts_with('.') {
+        ""
+    } else {
+        "."
+    };
     let scene_number = scene_number.map(|number| format!(" #{number}#")).unwrap_or_default();
 
     format!("{force_marker}{}{scene_number}", unstyled_text_to_fountain(text))
@@ -136,7 +138,11 @@ fn serialize_action(text: &StyledText, alignment: ActionAlignment, starts_docume
     let serialized = styled_text_to_fountain(text);
 
     if alignment == ActionAlignment::Center {
-        return serialized.split('\n').map(|line| format!(">{line}<")).collect::<Vec<_>>().join("\n");
+        return serialized
+            .split('\n')
+            .map(|line| format!(">{line}<"))
+            .collect::<Vec<_>>()
+            .join("\n");
     }
 
     let lines: Vec<&str> = serialized.split('\n').collect();
@@ -147,8 +153,7 @@ fn serialize_action(text: &StyledText, alignment: ActionAlignment, starts_docume
         .iter()
         .enumerate()
         .map(|(line_index, line)| {
-            if action_line_requires_force_marker(&lines, &unescaped_lines, line_index, starts_document)
-            {
+            if action_line_requires_force_marker(&lines, &unescaped_lines, line_index, starts_document) {
                 format!("!{line}")
             } else {
                 (*line).to_owned()
@@ -179,7 +184,11 @@ fn serialize_dialogue(text: &StyledText) -> String {
 }
 
 fn serialize_dual_dialogue(left: &DialogueSequence, right: &DialogueSequence) -> String {
-    [serialize_dialogue_sequence(left, false), serialize_dialogue_sequence(right, true)].join("\n\n")
+    [
+        serialize_dialogue_sequence(left, false),
+        serialize_dialogue_sequence(right, true),
+    ]
+    .join("\n\n")
 }
 
 fn serialize_dialogue_sequence(sequence: &DialogueSequence, dual: bool) -> String {
@@ -197,7 +206,11 @@ fn serialize_dialogue_content(content: &DialogueContent) -> String {
 }
 
 fn serialize_lyric(text: &StyledText) -> String {
-    styled_text_to_fountain(text).split('\n').map(|line| format!("~{line}")).collect::<Vec<_>>().join("\n")
+    styled_text_to_fountain(text)
+        .split('\n')
+        .map(|line| format!("~{line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn serialize_transition(text: &StyledText) -> String {
@@ -260,17 +273,13 @@ fn action_line_requires_force_marker(
         return false;
     }
 
-    let next_line_is_blank =
-        line_index == lines.len() - 1 || is_blank_fountain_line(lines[line_index + 1]);
+    let next_line_is_blank = line_index == lines.len() - 1 || is_blank_fountain_line(lines[line_index + 1]);
 
-    if next_line_is_blank
-        && (FORCED_SCENE_HEADING_SHAPED.is_match(syntax) || is_automatic_scene_heading(syntax))
-    {
+    if next_line_is_blank && (FORCED_SCENE_HEADING_SHAPED.is_match(syntax) || is_automatic_scene_heading(syntax)) {
         return true;
     }
 
-    (!next_line_is_blank && is_automatic_character(syntax))
-        || (next_line_is_blank && is_automatic_transition(syntax))
+    (!next_line_is_blank && is_automatic_character(syntax)) || (next_line_is_blank && is_automatic_transition(syntax))
 }
 
 fn is_blank_fountain_line(line: &str) -> bool {
@@ -285,7 +294,10 @@ mod tests {
     use TextStyle::{Bold, Italic, Strikeout, Underline};
 
     fn run(text: &str, styles: &[TextStyle]) -> TextRun {
-        TextRun { text: text.to_owned(), styles: styles.to_vec() }
+        TextRun {
+            text: text.to_owned(),
+            styles: styles.to_vec(),
+        }
     }
 
     fn styled(runs: Vec<TextRun>) -> StyledText {
@@ -297,11 +309,19 @@ mod tests {
     }
 
     fn scene(text: StyledText) -> ScreenplayElement {
-        ScreenplayElement::SceneHeading { text, scene_number: None }
+        ScreenplayElement::SceneHeading {
+            page: None,
+            text,
+            scene_number: None,
+        }
     }
 
     fn action(text: StyledText) -> ScreenplayElement {
-        ScreenplayElement::Action { text, alignment: ActionAlignment::Standard }
+        ScreenplayElement::Action {
+            page: None,
+            text,
+            alignment: ActionAlignment::Standard,
+        }
     }
 
     fn action_str(text: &str) -> ScreenplayElement {
@@ -309,23 +329,29 @@ mod tests {
     }
 
     fn character(text: StyledText) -> ScreenplayElement {
-        ScreenplayElement::Character { text }
+        ScreenplayElement::Character { page: None, text }
     }
 
     fn parenthetical(text: StyledText) -> ScreenplayElement {
-        ScreenplayElement::Parenthetical { text }
+        ScreenplayElement::Parenthetical { page: None, text }
     }
 
     fn dialogue(text: &str) -> ScreenplayElement {
-        ScreenplayElement::Dialogue { text: plain(text) }
+        ScreenplayElement::Dialogue {
+            page: None,
+            text: plain(text),
+        }
     }
 
     fn transition(text: StyledText) -> ScreenplayElement {
-        ScreenplayElement::Transition { text }
+        ScreenplayElement::Transition { page: None, text }
     }
 
     fn field(key: &str, values: Vec<StyledText>) -> TitlePageField {
-        TitlePageField { key: key.to_owned(), values }
+        TitlePageField {
+            key: key.to_owned(),
+            values,
+        }
     }
 
     fn doc(title_page: Vec<TitlePageField>, elements: Vec<ScreenplayElement>) -> ScreenplayDocument {
@@ -341,17 +367,22 @@ mod tests {
         let document = doc(
             vec![
                 field("Open key", vec![plain("One line")]),
-                field("Gallery", vec![styled(vec![run("first", &[Underline])]), plain("second\nline")]),
+                field(
+                    "Gallery",
+                    vec![styled(vec![run("first", &[Underline])]), plain("second\nline")],
+                ),
                 field("Empty", vec![]),
             ],
             vec![
                 ScreenplayElement::SceneHeading {
+                    page: None,
                     text: plain("INT. LAB - NIGHT"),
                     scene_number: Some("A1.2-B".to_owned()),
                 },
                 scene(plain("MEMORY")),
                 action_str("The machine wakes."),
                 ScreenplayElement::Action {
+                    page: None,
                     text: styled(vec![
                         run("CENTER ", &[]),
                         run("ONE\nCENTER", &[Bold]),
@@ -360,6 +391,7 @@ mod tests {
                     alignment: ActionAlignment::Center,
                 },
                 ScreenplayElement::Lyric {
+                    page: None,
                     text: styled(vec![
                         run("Sing ", &[]),
                         run("one\nSing", &[Italic]),
@@ -466,19 +498,32 @@ mod tests {
             character(plain("Crew mate")),
             dialogue("Still here."),
             ScreenplayElement::DualDialogue {
+                page: None,
                 left: DialogueSequence {
-                    character: Character { text: plain("LEFT VOICE") },
+                    character: Character {
+                        text: plain("LEFT VOICE"),
+                    },
                     content: vec![
-                        DialogueContent::Parenthetical { text: plain("(reading)") },
-                        DialogueContent::Dialogue { text: plain("Left one\nLeft two") },
+                        DialogueContent::Parenthetical {
+                            text: plain("(reading)"),
+                        },
+                        DialogueContent::Dialogue {
+                            text: plain("Left one\nLeft two"),
+                        },
                     ],
                 },
                 right: DialogueSequence {
-                    character: Character { text: plain("Right voice") },
+                    character: Character {
+                        text: plain("Right voice"),
+                    },
                     content: vec![
-                        DialogueContent::Dialogue { text: plain("Right one") },
+                        DialogueContent::Dialogue {
+                            text: plain("Right one"),
+                        },
                         DialogueContent::Parenthetical { text: plain("(then)") },
-                        DialogueContent::Dialogue { text: plain("Right two") },
+                        DialogueContent::Dialogue {
+                            text: plain("Right two"),
+                        },
                     ],
                 },
             },
@@ -558,7 +603,10 @@ mod tests {
     #[test]
     fn is_deterministic() {
         let document = doc(
-            vec![field("Styled", vec![styled(vec![run("stable", &[Italic, Underline, Bold])])])],
+            vec![field(
+                "Styled",
+                vec![styled(vec![run("stable", &[Italic, Underline, Bold])])],
+            )],
             vec![action(styled(vec![run("repeatable", &[Bold, Italic])]))],
         );
         let expected = "Styled: _***stable***_\n\n***repeatable***\n";
@@ -575,14 +623,23 @@ mod tests {
     #[test]
     fn forces_title_page_shaped_action_only_at_the_true_document_start() {
         assert_eq!(
-            body(vec![action_str("Note: The room is empty."), action_str("He said: run.")]),
+            body(vec![
+                action_str("Note: The room is empty."),
+                action_str("He said: run.")
+            ]),
             "!Note: The room is empty.\n\nHe said: run.\n"
         );
         assert_eq!(body(vec![action_str("He said: run.")]), "!He said: run.\n");
         assert_eq!(body(vec![action_str("Revision_2-A: Blue")]), "!Revision\\_2-A: Blue\n");
-        assert_eq!(body(vec![action_str("He said, quietly: run.")]), "He said, quietly: run.\n");
         assert_eq!(
-            body(vec![scene(plain("INT. ROOM - DAY")), action_str("Note: The room is empty.")]),
+            body(vec![action_str("He said, quietly: run.")]),
+            "He said, quietly: run.\n"
+        );
+        assert_eq!(
+            body(vec![
+                scene(plain("INT. ROOM - DAY")),
+                action_str("Note: The room is empty.")
+            ]),
             "INT. ROOM - DAY\n\nNote: The room is empty.\n"
         );
         assert_eq!(

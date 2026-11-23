@@ -17,8 +17,9 @@ fn style_marker(style: TextStyle) -> &'static str {
         TextStyle::Underline => "_",
         TextStyle::Bold => "**",
         TextStyle::Italic => "*",
-        // `normalizeStyles` never yields strikeout.
-        TextStyle::Strikeout => unreachable!("strikeout is not a supported Fountain style"),
+        // `normalizeStyles` drops strikeout (Fountain has no syntax for it); never
+        // reached, but emit nothing rather than panic on hand-built documents.
+        TextStyle::Strikeout => "",
     }
 }
 
@@ -76,7 +77,10 @@ fn styled_characters(text: &StyledText) -> Vec<StyledCharacter> {
             let styles = normalize_styles(&run.styles);
             normalize_line_endings(&run.text)
                 .chars()
-                .map(|character| StyledCharacter { character, styles: styles.clone() })
+                .map(|character| StyledCharacter {
+                    character,
+                    styles: styles.clone(),
+                })
                 .collect::<Vec<_>>()
         })
         .collect()
@@ -119,7 +123,10 @@ fn neighboring_content_styles(
 }
 
 fn normalize_styles(styles: &[TextStyle]) -> Vec<TextStyle> {
-    SUPPORTED_STYLES.into_iter().filter(|style| styles.contains(style)).collect()
+    SUPPORTED_STYLES
+        .into_iter()
+        .filter(|style| styles.contains(style))
+        .collect()
 }
 
 fn transition_styles(output: &mut String, active_styles: &[TextStyle], next_styles: &[TextStyle]) {

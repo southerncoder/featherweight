@@ -6,6 +6,7 @@ use regex::Regex;
 use crate::core::normalized_text::SuppressionReason;
 use crate::core::page_extents::{PageExtentMeasurements, get_page_horizontal_midpoint, is_line_in_top_page_band};
 use crate::core::physical_lines::PhysicalTextLine;
+use crate::core::text::constant_regex;
 use crate::core::text::js_trim;
 use crate::normalization::page_artifact_decisions::{SuppressionReasons, add_suppression_reason};
 
@@ -16,7 +17,7 @@ struct NumberedPageCandidate<'a> {
 }
 
 /// Port of `pageNumberPattern`: `/^(\d+)\.$/` (JS `\d` is ASCII).
-static PAGE_NUMBER_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([0-9]+)\.$").expect("valid regex"));
+static PAGE_NUMBER_PATTERN: LazyLock<Regex> = LazyLock::new(|| constant_regex(r"^([0-9]+)\.$"));
 
 /// Port of `detectSourcePageNumbers`.
 pub fn detect_source_page_numbers(
@@ -41,8 +42,13 @@ pub fn detect_source_page_numbers(
             }
 
             // `Number(digits)`: Rust's float parsing rounds the same way.
+            // invariant: `[0-9]+` always parses as f64 (huge values become infinity).
             let value = page_number[1].parse::<f64>().expect("digits parse as a number");
-            Some(NumberedPageCandidate { line_index, line, value })
+            Some(NumberedPageCandidate {
+                line_index,
+                line,
+                value,
+            })
         })
         .collect();
 
@@ -57,7 +63,11 @@ pub fn detect_source_page_numbers(
             continue;
         }
 
-        add_suppression_reason(suppression_reasons, candidate.line_index, SuppressionReason::SourcePageNumber);
+        add_suppression_reason(
+            suppression_reasons,
+            candidate.line_index,
+            SuppressionReason::SourcePageNumber,
+        );
     }
 }
 

@@ -24,7 +24,11 @@ Options:\n\
 enum Command {
     Help,
     Version,
-    Convert { input: PathBuf, format: Format, output: Option<PathBuf> },
+    Convert {
+        input: PathBuf,
+        format: Format,
+        output: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -75,7 +79,11 @@ fn parse_arguments(arguments: &[String]) -> Option<Command> {
     }
 
     match inputs.as_slice() {
-        [input] => Some(Command::Convert { input: input.clone(), format: format.unwrap_or(Format::Fountain), output }),
+        [input] => Some(Command::Convert {
+            input: input.clone(),
+            format: format.unwrap_or(Format::Fountain),
+            output,
+        }),
         _ => None,
     }
 }
@@ -113,7 +121,10 @@ fn main() -> ExitCode {
         Some(Command::Convert { input, format, output }) => (input, format, output),
     };
 
-    if output.as_deref().is_some_and(|output| output == input || same_file(&input, output)) {
+    if output
+        .as_deref()
+        .is_some_and(|output| output == input || same_file(&input, output))
+    {
         return fail(SAME_PATH_ERROR, 1);
     }
 
@@ -126,7 +137,10 @@ fn main() -> ExitCode {
 
     if !inspection.pages_needing_ocr.is_empty() {
         let pages: Vec<String> = inspection.pages_needing_ocr.iter().map(usize::to_string).collect();
-        let warning = format!("featherweight: OCR is needed for pages {}; converting native text only.\n", pages.join(", "));
+        let warning = format!(
+            "featherweight: OCR is needed for pages {}; converting native text only.\n",
+            pages.join(", ")
+        );
         if std::io::stderr().write_all(warning.as_bytes()).is_err() {
             return fail(WRITE_ERROR, 1);
         }
@@ -173,11 +187,19 @@ mod tests {
         assert_eq!(parse(&["--version"]), Some(Command::Version));
         assert_eq!(
             parse(&["a.pdf", "--format", "fdx", "--output", "a.fdx"]),
-            Some(Command::Convert { input: "a.pdf".into(), format: Format::Fdx, output: Some("a.fdx".into()) })
+            Some(Command::Convert {
+                input: "a.pdf".into(),
+                format: Format::Fdx,
+                output: Some("a.fdx".into())
+            })
         );
         assert_eq!(
             parse(&["a.pdf"]),
-            Some(Command::Convert { input: "a.pdf".into(), format: Format::Fountain, output: None })
+            Some(Command::Convert {
+                input: "a.pdf".into(),
+                format: Format::Fountain,
+                output: None
+            })
         );
         for invalid in [
             &[][..],

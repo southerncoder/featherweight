@@ -1,4 +1,5 @@
 //! Port of `src/core`.
+pub mod character_cue;
 pub mod layout;
 pub mod normalized_text;
 pub mod page_extents;

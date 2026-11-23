@@ -1,4 +1,5 @@
 //! Port of `src/core/recognition/action-lines.ts`.
+use crate::core::text::constant_regex;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -16,8 +17,7 @@ use crate::core::screenplay_document::{ActionAlignment, ScreenplayElement};
 use crate::core::text::{js_trim_end, js_trim_start};
 
 /// `/[.!?…]["'’”)\]]?$/u`.
-static TERMINAL_PUNCTUATION: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"[.!?…]["'’”)\]]?$"#).expect("valid regex"));
+static TERMINAL_PUNCTUATION: LazyLock<Regex> = LazyLock::new(|| constant_regex(r#"[.!?…]["'’”)\]]?$"#));
 
 /// Port of `ActionLineGroup`.
 #[derive(Debug, Clone, PartialEq)]
@@ -66,16 +66,22 @@ pub fn collect_action_lines<'a>(options: &CollectActionLinesOptions<'_, 'a>) -> 
             break;
         }
 
-        line_joins.push(if should_preserve_action_line_break(previous_line, next_line, options.action_line_measure) {
-            LineJoin::Newline
-        } else {
-            LineJoin::Wrap
-        });
+        line_joins.push(
+            if should_preserve_action_line_break(previous_line, next_line, options.action_line_measure) {
+                LineJoin::Newline
+            } else {
+                LineJoin::Wrap
+            },
+        );
         action_lines.push(next_line);
         next_index += 1;
     }
 
-    ActionLineGroup { lines: action_lines, line_joins, next_index }
+    ActionLineGroup {
+        lines: action_lines,
+        line_joins,
+        next_index,
+    }
 }
 
 /// Port of `createAction`.
@@ -86,6 +92,7 @@ pub fn create_action(
     sentence_spacing_convention: SentenceSpacingConvention,
 ) -> ScreenplayElement {
     ScreenplayElement::Action {
+        page: None,
         text: create_styled_text(lines, LineJoins::PerBoundary(line_joins), sentence_spacing_convention),
         alignment: if centered_action_lines.contains(lines[0]) {
             ActionAlignment::Center
@@ -127,7 +134,11 @@ fn collect_centered_action_lines<'a>(options: &CollectActionLinesOptions<'_, 'a>
         next_index += 1;
     }
 
-    ActionLineGroup { lines: action_lines, line_joins, next_index }
+    ActionLineGroup {
+        lines: action_lines,
+        line_joins,
+        next_index,
+    }
 }
 
 fn should_preserve_action_line_break(

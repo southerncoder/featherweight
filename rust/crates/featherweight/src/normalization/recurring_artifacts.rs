@@ -4,11 +4,11 @@ use std::collections::{HashMap, HashSet};
 use crate::core::normalized_text::SuppressionReason;
 use crate::core::page_extents::{PageExtentMeasurements, is_line_in_page_margin_band};
 use crate::core::physical_lines::PhysicalTextLine;
+use crate::core::text::js_len;
 use crate::normalization::page_artifact_decisions::{
     ArtifactDiagnostics, SuppressionReasons, add_artifact_diagnostic, add_suppression_reason,
 };
 use crate::normalization::page_artifact_text::{TextFragment, create_text_fragments, is_explicit_pagination_text};
-use crate::core::text::js_len;
 
 /// Port of `detectRecurringArtifacts`.
 pub fn detect_recurring_artifacts(
@@ -31,7 +31,10 @@ pub fn detect_recurring_artifacts(
         let mut clusters: Vec<Vec<&TextFragment<'_>>> = Vec::new();
 
         for fragment in fragments {
-            match clusters.iter_mut().find(|candidate| have_stable_presentation(candidate[0], fragment)) {
+            match clusters
+                .iter_mut()
+                .find(|candidate| have_stable_presentation(candidate[0], fragment))
+            {
                 Some(cluster) => cluster.push(fragment),
                 None => clusters.push(vec![fragment]),
             }
@@ -45,8 +48,7 @@ pub fn detect_recurring_artifacts(
                 .filter(|page_fragments| page_fragments.len() == 1)
                 .map(|page_fragments| page_fragments[0])
                 .collect();
-            let covers_document_majority =
-                unambiguous_occurrences.len() as f64 / document_page_count as f64 > 0.5;
+            let covers_document_majority = unambiguous_occurrences.len() as f64 / document_page_count as f64 > 0.5;
 
             if unambiguous_occurrences.len() < 3 || !covers_document_majority {
                 continue;
@@ -97,7 +99,10 @@ fn distinct_by_line<'f, 'a>(fragments: &[&'f TextFragment<'a>]) -> Vec<&'f TextF
     let mut distinct: Vec<&TextFragment<'a>> = Vec::new();
 
     for &fragment in fragments {
-        match distinct.iter_mut().find(|existing| existing.line_index == fragment.line_index) {
+        match distinct
+            .iter_mut()
+            .find(|existing| existing.line_index == fragment.line_index)
+        {
             Some(existing) => *existing = fragment,
             None => distinct.push(fragment),
         }

@@ -4,6 +4,15 @@
 //! `.length`, `.trim()`, or tests `\s`, so edge cases (U+FEFF, U+0085, astral
 //! characters) behave identically.
 
+/// Compiles one of this crate's constant regex patterns.
+///
+/// invariant: callers pass only string literals (or `format!` of literals) that
+/// are compiled on first use by the unit tests of every module using them, so a
+/// typo fails the test suite rather than a user's import.
+pub(crate) fn constant_regex(pattern: &str) -> regex::Regex {
+    regex::Regex::new(pattern).expect("constant regex patterns are valid")
+}
+
 /// `String.prototype.length`: UTF-16 code units.
 pub fn js_len(value: &str) -> usize {
     value.encode_utf16().count()

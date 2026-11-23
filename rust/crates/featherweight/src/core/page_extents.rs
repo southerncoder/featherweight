@@ -38,7 +38,10 @@ pub fn measure_page_extents<'a>(lines: impl IntoIterator<Item = &'a PhysicalText
     let mut lines_by_page: Vec<(usize, Vec<&PhysicalTextLine>)> = Vec::new();
 
     for line in &lines {
-        match lines_by_page.iter_mut().find(|(page_index, _)| *page_index == line.page_index) {
+        match lines_by_page
+            .iter_mut()
+            .find(|(page_index, _)| *page_index == line.page_index)
+        {
             Some((_, page_lines)) => page_lines.push(line),
             None => lines_by_page.push((line.page_index, vec![line])),
         }
@@ -60,17 +63,18 @@ pub fn measure_page_extents<'a>(lines: impl IntoIterator<Item = &'a PhysicalText
     }
 }
 
-pub fn get_effective_page_extents(
-    measurements: &PageExtentMeasurements,
-    page_index: usize,
-) -> Option<ContentExtents> {
+pub fn get_effective_page_extents(measurements: &PageExtentMeasurements, page_index: usize) -> Option<ContentExtents> {
     let page_line_count = measurements.page_line_counts.get(&page_index).copied().unwrap_or(0);
 
     if page_line_count < MINIMUM_RELIABLE_PAGE_LINE_COUNT {
         return measurements.document_extents;
     }
 
-    measurements.page_extents.get(&page_index).copied().or(measurements.document_extents)
+    measurements
+        .page_extents
+        .get(&page_index)
+        .copied()
+        .or(measurements.document_extents)
 }
 
 pub fn get_page_horizontal_midpoint(measurements: &PageExtentMeasurements, page_index: usize) -> Option<f64> {
@@ -99,7 +103,11 @@ pub fn page_margin_band_depth(measurements: &PageExtentMeasurements) -> f64 {
 }
 
 pub fn is_line_in_observed_bottom_page_band(line: &PhysicalTextLine, measurements: &PageExtentMeasurements) -> bool {
-    let extents = measurements.page_extents.get(&line.page_index).copied().or(measurements.document_extents);
+    let extents = measurements
+        .page_extents
+        .get(&line.page_index)
+        .copied()
+        .or(measurements.document_extents);
     let Some(extents) = extents else {
         return false;
     };

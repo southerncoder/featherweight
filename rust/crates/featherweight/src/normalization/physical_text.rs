@@ -22,7 +22,10 @@ pub fn normalize_physical_text(physical_text: &PhysicalText, represented_page_in
     let mut diagnostics: Vec<NormalizationDiagnostic> = Vec::new();
 
     for (line_index, line) in physical_text.lines.iter().enumerate() {
-        let page_position = match active_lines_by_page.iter().position(|(page_index, _)| *page_index == line.page_index) {
+        let page_position = match active_lines_by_page
+            .iter()
+            .position(|(page_index, _)| *page_index == line.page_index)
+        {
             Some(position) => position,
             None => {
                 active_lines_by_page.push((line.page_index, Vec::new()));
@@ -31,7 +34,10 @@ pub fn normalize_physical_text(physical_text: &PhysicalText, represented_page_in
         };
 
         if let Some(reasons) = &decisions.suppression_reasons[line_index] {
-            suppressed.push(SuppressedPhysicalTextLine { line: line.clone(), reasons: reasons.clone() });
+            suppressed.push(SuppressedPhysicalTextLine {
+                line: line.clone(),
+                reasons: reasons.clone(),
+            });
             continue;
         }
 
@@ -49,5 +55,9 @@ pub fn normalize_physical_text(physical_text: &PhysicalText, represented_page_in
         .map(|(page_index, lines)| NormalizedTextPage { page_index, lines })
         .collect();
 
-    NormalizedText { pages, suppressed, diagnostics }
+    NormalizedText {
+        pages,
+        suppressed,
+        diagnostics,
+    }
 }

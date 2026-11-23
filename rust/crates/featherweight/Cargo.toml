@@ -5,12 +5,37 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-repository = "https://github.com/bantamhq/featherweight"
+repository = "https://github.com/southerncoder/featherweight"
 readme = "../../PORTING.md"
 # Integration tests read fixtures from the repository root.
 exclude = ["tests"]
 keywords = ["screenplay", "fountain", "fdx", "pdf", "final-draft"]
 categories = ["parser-implementations", "text-processing"]
+
+[features]
+default = ["fountain", "fdx"]
+## Fountain serializer (`screenplay_to_fountain`).
+fountain = []
+## Final Draft FDX serializer (`screenplay_to_fdx`).
+fdx = []
+## TypeScript declarations for the JSON types, via `ts-rs`.
+typescript = ["dep:ts-rs"]
+
+[[bin]]
+name = "featherweight"
+required-features = ["fountain", "fdx"]
+
+[[example]]
+name = "stage"
+required-features = ["fountain", "fdx"]
+
+[[test]]
+name = "smoke"
+required-features = ["fountain"]
+
+[[example]]
+name = "export_types"
+required-features = ["typescript"]
 
 [dependencies]
 pdf-inspector = { workspace = true }
@@ -18,3 +43,4 @@ regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+ts-rs = { workspace = true, optional = true }

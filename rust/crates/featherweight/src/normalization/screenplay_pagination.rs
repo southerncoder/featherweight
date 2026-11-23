@@ -10,8 +10,7 @@ use crate::normalization::page_artifact_decisions::{
     ArtifactDiagnostics, SuppressionReasons, add_pagination_diagnostic, add_suppression_reason,
 };
 use crate::normalization::page_artifact_text::{
-    CONTINUED_HEADER_PATTERN, CONTINUED_MARKER, CharacterCue, MORE_MARKER, create_text_fragments,
-    parse_character_cue,
+    CONTINUED_HEADER_PATTERN, CONTINUED_MARKER, CharacterCue, MORE_MARKER, create_text_fragments, parse_character_cue,
 };
 
 /// Port of `detectExplicitPaginationMarkers`.
@@ -25,7 +24,9 @@ pub fn detect_explicit_pagination_markers(
         let fragments = create_text_fragments(line_index, line);
         let line_text = js_trim(&line.text);
         let has_bottom_marker = line_text == MORE_MARKER || line_text == CONTINUED_MARKER;
-        let has_top_marker = fragments.iter().any(|fragment| CONTINUED_HEADER_PATTERN.is_match(&fragment.text));
+        let has_top_marker = fragments
+            .iter()
+            .any(|fragment| CONTINUED_HEADER_PATTERN.is_match(&fragment.text));
 
         if has_bottom_marker {
             if is_line_in_bottom_page_band(line, geometry) {
@@ -58,7 +59,10 @@ pub fn detect_continued_character_cues(
     let mut lines_by_page: Vec<(usize, Vec<usize>)> = Vec::new();
 
     for (line_index, line) in lines.iter().enumerate() {
-        match lines_by_page.iter_mut().find(|(page_index, _)| *page_index == line.page_index) {
+        match lines_by_page
+            .iter_mut()
+            .find(|(page_index, _)| *page_index == line.page_index)
+        {
             Some((_, page_lines)) => page_lines.push(line_index),
             None => lines_by_page.push((line.page_index, vec![line_index])),
         }
@@ -75,8 +79,7 @@ pub fn detect_continued_character_cues(
         }
 
         let is_suppressed = |line_index: usize| suppression_reasons[line_index].is_some();
-        let Some(first_content_offset) = page_lines.iter().position(|&line_index| !is_suppressed(line_index))
-        else {
+        let Some(first_content_offset) = page_lines.iter().position(|&line_index| !is_suppressed(line_index)) else {
             continue;
         };
 
@@ -84,19 +87,20 @@ pub fn detect_continued_character_cues(
         let first_content_line = &lines[first_content_index];
         let current_cue = parse_character_cue(first_content_index, first_content_line);
 
-        let Some(current_cue) = current_cue.filter(|_| is_line_in_top_page_band(first_content_line, geometry))
-        else {
+        let Some(current_cue) = current_cue.filter(|_| is_line_in_top_page_band(first_content_line, geometry)) else {
             continue;
         };
 
         let trailing_more_offset = find_trailing_more_line(lines, previous_page_lines, suppression_reasons);
-        let previous_content_line = find_previous_content_line(previous_page_lines, trailing_more_offset, suppression_reasons)
-            .map(|line_index| &lines[line_index]);
+        let previous_content_line =
+            find_previous_content_line(previous_page_lines, trailing_more_offset, suppression_reasons)
+                .map(|line_index| &lines[line_index]);
         let following_content_line = page_lines[first_content_offset + 1..]
             .iter()
             .find(|&&line_index| !is_suppressed(line_index))
             .map(|&line_index| &lines[line_index]);
-        let previous_cue = find_previous_matching_column_cue(lines, previous_page_lines, &current_cue, suppression_reasons);
+        let previous_cue =
+            find_previous_matching_column_cue(lines, previous_page_lines, &current_cue, suppression_reasons);
         let trailing_more_line = trailing_more_offset.map(|offset| &lines[previous_page_lines[offset]]);
         let ends_previous_page = previous_content_line.is_some_and(|previous_content_line| match trailing_more_line {
             None => is_line_in_observed_bottom_page_band(previous_content_line, geometry),
@@ -115,11 +119,19 @@ pub fn detect_continued_character_cues(
         };
 
         if has_continuation_context {
-            add_suppression_reason(suppression_reasons, first_content_index, SuppressionReason::ScreenplayPagination);
+            add_suppression_reason(
+                suppression_reasons,
+                first_content_index,
+                SuppressionReason::ScreenplayPagination,
+            );
 
             if let Some(offset) = trailing_more_offset {
                 let trailing_more_index = previous_page_lines[offset];
-                add_suppression_reason(suppression_reasons, trailing_more_index, SuppressionReason::ScreenplayPagination);
+                add_suppression_reason(
+                    suppression_reasons,
+                    trailing_more_index,
+                    SuppressionReason::ScreenplayPagination,
+                );
                 diagnostics[trailing_more_index] = None;
             }
 

@@ -8,13 +8,13 @@ use pdf_inspector::TextItem;
 use pdf_inspector::types::ItemType;
 
 use crate::core::positioned_text::{
-    PositionedText, PositionedTextBounds, PositionedTextFont, PositionedTextItem, PositionedTextStyle,
-    SourceMethod,
+    PositionedText, PositionedTextBounds, PositionedTextFont, PositionedTextItem, PositionedTextStyle, SourceMethod,
 };
 use crate::error::{PdfExtractionError, PdfInspectionError};
 
 /// Port of `PdfInspection`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct PdfInspection {
     pub page_count: usize,
@@ -32,8 +32,8 @@ impl PdfInspection {
 /// Port of `inspectScreenplayPdf`: physical page count and the 0-based pages
 /// that have no usable embedded text.
 pub fn inspect_screenplay_pdf(pdf_bytes: &[u8]) -> Result<PdfInspection, PdfInspectionError> {
-    let classification = pdf_inspector::classify_pdf_mem(pdf_bytes)
-        .map_err(|cause| PdfInspectionError { cause: Box::new(cause) })?;
+    let classification =
+        pdf_inspector::classify_pdf_mem(pdf_bytes).map_err(|cause| PdfInspectionError { cause: Box::new(cause) })?;
     let page_count = classification.page_count as usize;
     let mut seen = HashSet::new();
 
@@ -105,7 +105,9 @@ pub fn translate_pdf_inspector_text_items(items: &[TextItem]) -> Result<Position
 
 fn assert_valid_text_item(item: &TextItem) -> Result<(), PdfExtractionError> {
     if item.page < 1 {
-        return Err(PdfExtractionError::ItemTranslationFailed("Native PDF text item has an invalid page."));
+        return Err(PdfExtractionError::ItemTranslationFailed(
+            "Native PDF text item has an invalid page.",
+        ));
     }
 
     let numbers = [item.x, item.y, item.width, item.height, item.font_size];

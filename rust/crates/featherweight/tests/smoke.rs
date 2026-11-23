@@ -35,14 +35,26 @@ fn json_is_deterministic_and_route_order_independent() {
 
 #[test]
 fn rejects_invalid_routes() {
-    assert_eq!(screenplay_to_json(PDF, &[0, 0], &[]), Err(ScreenplayConversionError::DuplicatePageIndex));
-    assert_eq!(screenplay_to_json(PDF, &[0], &[0]), Err(ScreenplayConversionError::OverlappingPageIndex));
-    assert_eq!(screenplay_to_json(PDF, &[9], &[]), Err(ScreenplayConversionError::InvalidPageIndex));
+    assert_eq!(
+        screenplay_to_json(PDF, &[0, 0], &[]),
+        Err(ScreenplayConversionError::DuplicatePageIndex)
+    );
+    assert_eq!(
+        screenplay_to_json(PDF, &[0], &[0]),
+        Err(ScreenplayConversionError::OverlappingPageIndex)
+    );
+    assert_eq!(
+        screenplay_to_json(PDF, &[9], &[]),
+        Err(ScreenplayConversionError::InvalidPageIndex)
+    );
 }
 
 #[test]
 fn one_call_document_matches_explicit_routes() {
     let explicit = featherweight::screenplay_to_document(PDF, &all_pages(), &[]).unwrap();
     assert_eq!(featherweight::screenplay_document(PDF).unwrap(), explicit);
-    assert_eq!(inspect_screenplay_pdf(PDF).unwrap().page_routes(), (all_pages(), vec![]));
+    assert_eq!(
+        inspect_screenplay_pdf(PDF).unwrap().page_routes(),
+        (all_pages(), vec![])
+    );
 }

@@ -22,7 +22,10 @@ pub fn matches_established_cue_geometry(line: &PhysicalTextLine, layout: &Screen
         layout.dual_dialogue.map(|dual| dual.right.character_cue),
     ];
 
-    cue_anchors.iter().flatten().any(|anchor| (line.bounds.x - anchor.x).abs() <= tolerance)
+    cue_anchors
+        .iter()
+        .flatten()
+        .any(|anchor| (line.bounds.x - anchor.x).abs() <= tolerance)
 }
 
 /// Port of `matchesEstablishedContentGeometry`.
@@ -39,7 +42,11 @@ pub fn matches_established_content_geometry(
         layout.dual_dialogue.map(|dual| dual.right.dialogue),
     ];
 
-    if content_anchors.iter().flatten().any(|anchor| (line.bounds.x - anchor.x).abs() <= role_tolerance) {
+    if content_anchors
+        .iter()
+        .flatten()
+        .any(|anchor| (line.bounds.x - anchor.x).abs() <= role_tolerance)
+    {
         return true;
     }
 

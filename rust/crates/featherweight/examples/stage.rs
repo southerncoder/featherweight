@@ -47,7 +47,12 @@ fn json(value: &impl serde::Serialize) {
 
 fn pages(arg: Option<String>) -> Vec<usize> {
     arg.filter(|value| !value.is_empty())
-        .map(|value| value.split(',').map(|index| index.parse().expect("page index")).collect())
+        .map(|value| {
+            value
+                .split(',')
+                .map(|index| index.parse().expect("page index"))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -56,12 +61,18 @@ fn main() {
     match args.next().as_deref() {
         Some("physical") => json(&group_positioned_text_into_physical_lines(&input::<PositionedText>())),
         Some("normalize") => {
-            let NormalizeInput { physical_text, page_indexes } = input();
+            let NormalizeInput {
+                physical_text,
+                page_indexes,
+            } = input();
             json(&normalize_physical_text(&physical_text, &page_indexes));
         }
         Some("layout") => json(&infer_screenplay_layout(&input::<NormalizedText>())),
         Some("recognize") => {
-            let RecognizeInput { normalized_text, layout } = input();
+            let RecognizeInput {
+                normalized_text,
+                layout,
+            } = input();
             json(&recognize_screenplay(&normalized_text, &layout));
         }
         Some("fountain") => print!("{}", screenplay_document_to_fountain(&input::<ScreenplayDocument>())),

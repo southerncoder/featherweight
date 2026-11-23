@@ -11,6 +11,7 @@ use crate::core::recognition::recognition_geometry::{
 use crate::core::recognition::scene_headings::is_scene_heading_line;
 use crate::core::recognition::styled_text::{LineJoin, LineJoins, create_styled_text};
 use crate::core::screenplay_document::TitlePageField;
+use crate::core::text::constant_regex;
 use crate::core::text::{js_len, js_trim, js_trim_end};
 
 /// Port of `TitlePageExtraction`.
@@ -28,16 +29,16 @@ const JS_WHITESPACE_CLASS: &str =
 
 /// `/^(?:(?:written|prepared|screenplay|teleplay)\s+(?:by|for)|by)$/iu`.
 static CONVENTIONAL_CREDIT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(r"(?i)^(?:(?:written|prepared|screenplay|teleplay){JS_WHITESPACE_CLASS}+(?:by|for)|by)$"))
-        .expect("valid regex")
+    constant_regex(&format!(
+        r"(?i)^(?:(?:written|prepared|screenplay|teleplay){JS_WHITESPACE_CLASS}+(?:by|for)|by)$"
+    ))
 });
 /// `/^\d{1,4}[./-]\d{1,2}[./-]\d{1,4}$/u` (`\d` is ASCII in JavaScript).
-static DRAFT_DATE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[0-9]{1,4}[./-][0-9]{1,2}[./-][0-9]{1,4}$").expect("valid regex"));
+static DRAFT_DATE: LazyLock<Regex> = LazyLock::new(|| constant_regex(r"^[0-9]{1,4}[./-][0-9]{1,2}[./-][0-9]{1,4}$"));
 /// The `copyright` alternative of `copyrightNotice` before its `\b`.
-static COPYRIGHT_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^copyright").expect("valid regex"));
+static COPYRIGHT_WORD: LazyLock<Regex> = LazyLock::new(|| constant_regex(r"(?i)^copyright"));
 /// The `©|\(c\)` alternatives of `copyrightNotice`.
-static COPYRIGHT_SYMBOL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(?:©|\(c\))").expect("valid regex"));
+static COPYRIGHT_SYMBOL: LazyLock<Regex> = LazyLock::new(|| constant_regex(r"(?i)^(?:©|\(c\))"));
 
 /// `copyrightNotice.test(text)` for `/^(?:copyright\b|©|\(c\))/iu`.
 ///
@@ -64,7 +65,11 @@ pub fn extract_title_page<'a>(
     layout: &ScreenplayLayout,
     coordinate_tolerance: f64,
 ) -> TitlePageExtraction<'a> {
-    let untouched = || TitlePageExtraction { fields: Vec::new(), body_lines: lines.to_vec(), unattributed_lines: Vec::new() };
+    let untouched = || TitlePageExtraction {
+        fields: Vec::new(),
+        body_lines: lines.to_vec(),
+        unattributed_lines: Vec::new(),
+    };
 
     if layout.action.is_none() {
         return untouched();
@@ -80,10 +85,14 @@ pub fn extract_title_page<'a>(
         return untouched();
     }
 
-    let first_page_lines: Vec<&'a PhysicalTextLine> =
-        lines.iter().copied().filter(|line| line.page_index == first_page_index).collect();
-    let first_page_heading_index =
-        first_page_lines.iter().position(|line| is_scene_heading_line(line, layout, coordinate_tolerance));
+    let first_page_lines: Vec<&'a PhysicalTextLine> = lines
+        .iter()
+        .copied()
+        .filter(|line| line.page_index == first_page_index)
+        .collect();
+    let first_page_heading_index = first_page_lines
+        .iter()
+        .position(|line| is_scene_heading_line(line, layout, coordinate_tolerance));
 
     // A title block may share the first page with the script's opening. It is
     // then the lines above the first scene heading, set well apart from it.
@@ -104,7 +113,9 @@ pub fn extract_title_page<'a>(
         .collect();
     let is_separate_title_page = !title_lines.is_empty()
         && !body_lines.is_empty()
-        && body_lines.iter().any(|line| is_scene_heading_line(line, layout, coordinate_tolerance));
+        && body_lines
+            .iter()
+            .any(|line| is_scene_heading_line(line, layout, coordinate_tolerance));
 
     if !is_separate_title_page {
         return untouched();
@@ -114,8 +125,16 @@ pub fn extract_title_page<'a>(
         // Lines above the script's first heading that are not a title block are
         // part of the script (cold-open text, scene-number fragments).
         None if first_page_heading_index.is_some() => untouched(),
-        None => TitlePageExtraction { fields: Vec::new(), body_lines: lines.to_vec(), unattributed_lines: title_lines },
-        Some(fields) => TitlePageExtraction { fields, body_lines, unattributed_lines: Vec::new() },
+        None => TitlePageExtraction {
+            fields: Vec::new(),
+            body_lines: lines.to_vec(),
+            unattributed_lines: title_lines,
+        },
+        Some(fields) => TitlePageExtraction {
+            fields,
+            body_lines,
+            unattributed_lines: Vec::new(),
+        },
     }
 }
 
@@ -136,10 +155,13 @@ fn shared_page_title_lines<'a>(
         .filter(|line| line.bounds.y > heading.bounds.y)
         .collect();
     // `reduce` keeps the first of equally low lines.
-    let lowest = candidates.iter().copied().fold(None::<&PhysicalTextLine>, |current, line| match current {
-        Some(current) if line.bounds.y >= current.bounds.y => Some(current),
-        _ => Some(line),
-    });
+    let lowest = candidates
+        .iter()
+        .copied()
+        .fold(None::<&PhysicalTextLine>, |current, line| match current {
+            Some(current) if line.bounds.y >= current.bounds.y => Some(current),
+            _ => Some(line),
+        });
 
     match lowest {
         Some(lowest) if vertical_gap_in_line_heights(lowest, heading) >= MINIMUM_TITLE_BLOCK_GAP => candidates,
@@ -163,7 +185,11 @@ fn recognize_conventional_title_page(
 
     let fields: Vec<TitleFieldLines<'_>> = upper_fields.into_iter().chain(footer_fields).collect();
 
-    if fields.is_empty() { None } else { Some(to_title_page_fields(lines, fields)) }
+    if fields.is_empty() {
+        None
+    } else {
+        Some(to_title_page_fields(lines, fields))
+    }
 }
 
 fn find_title_footer_start_index(lines: &[&PhysicalTextLine]) -> usize {
@@ -189,12 +215,22 @@ fn find_title_footer_start_index(lines: &[&PhysicalTextLine]) -> usize {
     footer_start_index
 }
 
-fn recognize_upper_title_fields<'a>(lines: &[&'a PhysicalTextLine], coordinate_tolerance: f64) -> Vec<TitleFieldLines<'a>> {
-    if lines.is_empty() || !lines.iter().all(|line| have_matching_centers(lines[0], line, coordinate_tolerance)) {
+fn recognize_upper_title_fields<'a>(
+    lines: &[&'a PhysicalTextLine],
+    coordinate_tolerance: f64,
+) -> Vec<TitleFieldLines<'a>> {
+    if lines.is_empty()
+        || !lines
+            .iter()
+            .all(|line| have_matching_centers(lines[0], line, coordinate_tolerance))
+    {
         return Vec::new();
     }
 
-    let Some(credit_index) = lines.iter().position(|line| CONVENTIONAL_CREDIT.is_match(js_trim(&line.text))) else {
+    let Some(credit_index) = lines
+        .iter()
+        .position(|line| CONVENTIONAL_CREDIT.is_match(js_trim(&line.text)))
+    else {
         let mut title_value_count = 1;
 
         while title_value_count < lines.len()
@@ -231,13 +267,19 @@ fn recognize_upper_title_fields<'a>(lines: &[&'a PhysicalTextLine], coordinate_t
     fields
 }
 
-fn recognize_footer_title_fields<'a>(lines: &[&'a PhysicalTextLine], coordinate_tolerance: f64) -> Vec<TitleFieldLines<'a>> {
+fn recognize_footer_title_fields<'a>(
+    lines: &[&'a PhysicalTextLine],
+    coordinate_tolerance: f64,
+) -> Vec<TitleFieldLines<'a>> {
     if lines.is_empty() {
         return Vec::new();
     }
 
     if let Some((notes, copyright)) = recognize_independent_footer(lines, coordinate_tolerance) {
-        return vec![create_title_field("Notes", notes), create_title_field("Copyright", &[copyright])];
+        return vec![
+            create_title_field("Notes", notes),
+            create_title_field("Copyright", &[copyright]),
+        ];
     }
 
     let mut fields = Vec::new();
@@ -259,8 +301,9 @@ fn recognize_footer_title_fields<'a>(lines: &[&'a PhysicalTextLine], coordinate_
         (line.bounds.x + line.bounds.width - (contact_candidate[0].bounds.x + contact_candidate[0].bounds.width)).abs()
             <= origin_tolerance
     });
-    let has_adjacent_contact_lines =
-        contact_candidate.windows(2).all(|pair| are_vertically_adjacent(pair[0], pair[1], 1.5));
+    let has_adjacent_contact_lines = contact_candidate
+        .windows(2)
+        .all(|pair| are_vertically_adjacent(pair[0], pair[1], 1.5));
     let has_supported_contact_geometry = if has_draft_date {
         contact_candidate.is_empty() || {
             let gap = vertical_gap_in_line_heights(conventional_lines[0], contact_candidate[0]);
@@ -269,7 +312,11 @@ fn recognize_footer_title_fields<'a>(lines: &[&'a PhysicalTextLine], coordinate_
     } else {
         contact_candidate.len() > 1 && has_matching_origins && has_adjacent_contact_lines
     };
-    let contact: &[&PhysicalTextLine] = if has_supported_contact_geometry { contact_candidate } else { &[] };
+    let contact: &[&PhysicalTextLine] = if has_supported_contact_geometry {
+        contact_candidate
+    } else {
+        &[]
+    };
 
     if has_draft_date {
         fields.push(create_title_field("Draft date", &[conventional_lines[0]]));
@@ -314,10 +361,12 @@ fn recognize_independent_footer<'l, 'a>(
     let has_right_aligned_notes = notes
         .iter()
         .all(|line| (line.bounds.x + line.bounds.width - notes_right_edge).abs() <= right_edge_tolerance)
-        && notes.windows(2).all(|pair| are_vertically_adjacent(pair[0], pair[1], 1.5));
+        && notes
+            .windows(2)
+            .all(|pair| are_vertically_adjacent(pair[0], pair[1], 1.5));
     let footer_gap = vertical_gap_in_line_heights(notes[notes.len() - 1], copyright);
-    let is_independent_copyright = (2.0..=5.0).contains(&footer_gap)
-        && (copyright.bounds.x - notes[0].bounds.x).abs() > right_edge_tolerance;
+    let is_independent_copyright =
+        (2.0..=5.0).contains(&footer_gap) && (copyright.bounds.x - notes[0].bounds.x).abs() > right_edge_tolerance;
 
     (has_right_aligned_notes && is_independent_copyright).then_some((notes, copyright))
 }
@@ -330,14 +379,19 @@ struct TitleFieldLines<'a> {
 }
 
 fn create_title_field<'a>(key: &'static str, lines: &[&'a PhysicalTextLine]) -> TitleFieldLines<'a> {
-    TitleFieldLines { key, lines: lines.to_vec() }
+    TitleFieldLines {
+        key,
+        lines: lines.to_vec(),
+    }
 }
 
 /// Port of `toTitlePageFields`: title lines no field claims are kept as Notes,
 /// so recognizing a title page never drops text.
 fn to_title_page_fields(lines: &[&PhysicalTextLine], fields: Vec<TitleFieldLines<'_>>) -> Vec<TitlePageField> {
     let is_claimed = |line: &PhysicalTextLine| {
-        fields.iter().any(|field| field.lines.iter().any(|claimed| std::ptr::eq(*claimed, line)))
+        fields
+            .iter()
+            .any(|field| field.lines.iter().any(|claimed| std::ptr::eq(*claimed, line)))
     };
     let unclaimed: Vec<&PhysicalTextLine> = lines.iter().copied().filter(|line| !is_claimed(line)).collect();
     let mut fields = fields;
@@ -345,7 +399,10 @@ fn to_title_page_fields(lines: &[&PhysicalTextLine], fields: Vec<TitleFieldLines
     if !unclaimed.is_empty() {
         match fields.iter_mut().find(|field| field.key == "Notes") {
             Some(notes) => notes.lines.extend(unclaimed),
-            None => fields.push(TitleFieldLines { key: "Notes", lines: unclaimed }),
+            None => fields.push(TitleFieldLines {
+                key: "Notes",
+                lines: unclaimed,
+            }),
         }
     }
 

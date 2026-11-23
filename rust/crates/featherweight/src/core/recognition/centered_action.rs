@@ -66,11 +66,7 @@ pub fn find_centered_action_lines<'a>(
             || matches_established_content_geometry(upper, layout, coordinate_tolerance)
             || matches_established_content_geometry(lower, layout, coordinate_tolerance)
             || (matches_established_cue_geometry(upper, layout, coordinate_tolerance.max(upper.bounds.height / 2.0))
-                && matches_established_cue_geometry(
-                    lower,
-                    layout,
-                    coordinate_tolerance.max(lower.bounds.height / 2.0),
-                ))
+                && matches_established_cue_geometry(lower, layout, coordinate_tolerance.max(lower.bounds.height / 2.0)))
         {
             continue;
         }
@@ -88,7 +84,11 @@ pub fn find_centered_action_lines<'a>(
             continue;
         }
 
-        supported_groups.push(SupportedGroup { center: group_center, upper, lower });
+        supported_groups.push(SupportedGroup {
+            center: group_center,
+            upper,
+            lower,
+        });
         add_centered_group(lines, index, group_center, &candidate_set, &mut centered_lines);
     }
 
@@ -240,7 +240,10 @@ fn find_centered_group_range(
         last_index += 1;
     }
 
-    GroupRange { first_index, last_index }
+    GroupRange {
+        first_index,
+        last_index,
+    }
 }
 
 fn belongs_to_centered_group(

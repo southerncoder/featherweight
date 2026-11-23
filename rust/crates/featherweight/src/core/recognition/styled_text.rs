@@ -1,4 +1,5 @@
 //! Port of `src/core/recognition/styled-text.ts`.
+use crate::core::text::constant_regex;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -28,8 +29,7 @@ pub enum LineJoins<'a> {
 }
 
 /// `/^[,.;:!?…)]/u`.
-static LEADING_ATTACHED_PUNCTUATION: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[,.;:!?…)]").expect("valid regex"));
+static LEADING_ATTACHED_PUNCTUATION: LazyLock<Regex> = LazyLock::new(|| constant_regex(r"^[,.;:!?…)]"));
 
 /// Port of `isContinuationDash`: `value` is one JavaScript "character"
 /// (`text.at(-1)`, `text[0]`), or empty.
@@ -82,7 +82,11 @@ pub fn create_styled_text(
                 );
             }
 
-            append_run(&mut runs, js_slice(&line.text, start, end), &styles_for_span(Some(span)));
+            append_run(
+                &mut runs,
+                js_slice(&line.text, start, end),
+                &styles_for_span(Some(span)),
+            );
             previous_span_end = end;
         }
     }
@@ -100,11 +104,18 @@ fn js_slice(text: &str, start: usize, end: usize) -> &str {
     text.get(start..end).unwrap_or("")
 }
 
-fn separator_styles_for_spans(previous_span: Option<&PhysicalTextSpan>, next_span: &PhysicalTextSpan) -> Vec<TextStyle> {
+fn separator_styles_for_spans(
+    previous_span: Option<&PhysicalTextSpan>,
+    next_span: &PhysicalTextSpan,
+) -> Vec<TextStyle> {
     let previous_styles = styles_for_span(previous_span);
     let next_styles = styles_for_span(Some(next_span));
 
-    if previous_styles == next_styles { previous_styles } else { Vec::new() }
+    if previous_styles == next_styles {
+        previous_styles
+    } else {
+        Vec::new()
+    }
 }
 
 /// Port of `styledTextValue`.
@@ -164,7 +175,12 @@ fn create_line_separator(
 
     // `/\s+$/u` and `/^\s+/u`: every JavaScript whitespace character is one
     // UTF-16 code unit, so character counts equal `.length`.
-    let trailing_whitespace = previous_line.text.chars().rev().take_while(|c| is_js_whitespace(*c)).count();
+    let trailing_whitespace = previous_line
+        .text
+        .chars()
+        .rev()
+        .take_while(|c| is_js_whitespace(*c))
+        .count();
     let leading_whitespace = line.text.chars().take_while(|c| is_js_whitespace(*c)).count();
 
     let retained_spacing = trailing_whitespace + leading_whitespace;
@@ -191,19 +207,27 @@ fn create_line_separator(
 /// `at(-1)` a lone surrogate, which is no dash either, so the last `char`
 /// decides the same way.
 pub(crate) fn ends_with_continuation_dash(text: &str) -> bool {
-    text.chars().last().is_some_and(|c| is_continuation_dash(c.encode_utf8(&mut [0; 4])))
+    text.chars()
+        .last()
+        .is_some_and(|c| is_continuation_dash(c.encode_utf8(&mut [0; 4])))
 }
 
 /// `isContinuationDash(text[0] ?? "")`.
 pub(crate) fn starts_with_continuation_dash(text: &str) -> bool {
-    text.chars().next().is_some_and(|c| is_continuation_dash(c.encode_utf8(&mut [0; 4])))
+    text.chars()
+        .next()
+        .is_some_and(|c| is_continuation_dash(c.encode_utf8(&mut [0; 4])))
 }
 
 fn separator_styles(previous_line: &PhysicalTextLine, line: &PhysicalTextLine) -> Vec<TextStyle> {
     let previous_styles = styles_for_span(previous_line.spans.last());
     let next_styles = styles_for_span(line.spans.first());
 
-    if previous_styles == next_styles { previous_styles } else { Vec::new() }
+    if previous_styles == next_styles {
+        previous_styles
+    } else {
+        Vec::new()
+    }
 }
 
 fn styles_for_span(span: Option<&PhysicalTextSpan>) -> Vec<TextStyle> {
@@ -234,7 +258,10 @@ fn append_run(runs: &mut Vec<TextRun>, text: &str, styles: &[TextStyle]) {
         return;
     }
 
-    runs.push(TextRun { text: text.to_owned(), styles: styles.to_vec() });
+    runs.push(TextRun {
+        text: text.to_owned(),
+        styles: styles.to_vec(),
+    });
 }
 
 #[cfg(test)]
@@ -243,7 +270,10 @@ pub(crate) mod tests {
     use crate::core::positioned_text::{PositionedTextBounds, PositionedTextFont, PositionedTextStyle, SourceMethod};
 
     pub(crate) fn run(text: &str, styles: &[TextStyle]) -> TextRun {
-        TextRun { text: text.to_owned(), styles: styles.to_vec() }
+        TextRun {
+            text: text.to_owned(),
+            styles: styles.to_vec(),
+        }
     }
 
     fn styled(runs: Vec<TextRun>) -> StyledText {
@@ -252,7 +282,10 @@ pub(crate) mod tests {
 
     #[test]
     fn slices_within_a_run_while_preserving_its_styles() {
-        let text = styled(vec![run("Bold", &[TextStyle::Bold]), run(" italic", &[TextStyle::Italic])]);
+        let text = styled(vec![
+            run("Bold", &[TextStyle::Bold]),
+            run(" italic", &[TextStyle::Italic]),
+        ]);
 
         assert_eq!(
             slice_styled_text(&text, 7),
@@ -262,7 +295,10 @@ pub(crate) mod tests {
 
     #[test]
     fn returns_all_runs_when_the_slice_end_exceeds_the_text_length() {
-        let text = styled(vec![run("Bold", &[TextStyle::Bold]), run(" italic", &[TextStyle::Italic])]);
+        let text = styled(vec![
+            run("Bold", &[TextStyle::Bold]),
+            run(" italic", &[TextStyle::Italic]),
+        ]);
 
         assert_eq!(slice_styled_text(&text, 100), text);
     }
@@ -275,7 +311,10 @@ pub(crate) mod tests {
             run("\t", &[TextStyle::Underline]),
         ]);
 
-        assert_eq!(trim_styled_text_end(&text), styled(vec![run("Text", &[TextStyle::Bold])]));
+        assert_eq!(
+            trim_styled_text_end(&text),
+            styled(vec![run("Text", &[TextStyle::Bold])])
+        );
     }
 
     #[test]
@@ -290,11 +329,19 @@ pub(crate) mod tests {
         let text = styled(vec![run("a\u{1F3AC}b", &[])]);
 
         assert_eq!(slice_styled_text(&text, 3), styled(vec![run("a\u{1F3AC}", &[])]));
-        assert_eq!(trim_styled_text_end(&styled(vec![run("\u{1F3AC} ", &[])])), styled(vec![run("\u{1F3AC}", &[])]));
+        assert_eq!(
+            trim_styled_text_end(&styled(vec![run("\u{1F3AC} ", &[])])),
+            styled(vec![run("\u{1F3AC}", &[])])
+        );
     }
 
     pub(crate) fn line_with(text: &str, x: f64, y: f64, width: f64, style: PositionedTextStyle) -> PhysicalTextLine {
-        let bounds = PositionedTextBounds { x, y, width, height: 12.0 };
+        let bounds = PositionedTextBounds {
+            x,
+            y,
+            width,
+            height: 12.0,
+        };
         PhysicalTextLine {
             page_index: 0,
             text: text.to_owned(),
@@ -306,7 +353,10 @@ pub(crate) mod tests {
                 source_index: 0,
                 source_method: SourceMethod::EmbeddedText,
                 bounds,
-                font: PositionedTextFont { name: "Courier Prime".to_owned(), size: 12.0 },
+                font: PositionedTextFont {
+                    name: "Courier Prime".to_owned(),
+                    size: 12.0,
+                },
                 style,
             }],
         }
@@ -316,7 +366,10 @@ pub(crate) mod tests {
     fn does_not_create_empty_text_runs() {
         let line = line_with("", 108.0, 700.0, 0.0, PositionedTextStyle::default());
 
-        assert_eq!(create_styled_text(&[&line], LineJoins::Uniform(LineJoin::Wrap), None), styled(vec![]));
+        assert_eq!(
+            create_styled_text(&[&line], LineJoins::Uniform(LineJoin::Wrap), None),
+            styled(vec![])
+        );
     }
 
     #[test]
@@ -329,13 +382,32 @@ pub(crate) mod tests {
         let spaced = line_with("He left. ", 0.0, 0.0, 0.0, plain);
         let wrap = LineJoins::Uniform(LineJoin::Wrap);
 
-        assert_eq!(styled_text_value(&create_styled_text(&[&first, &second], wrap, None)), "He left. Then");
-        assert_eq!(styled_text_value(&create_styled_text(&[&dash, &second], wrap, None)), "half-Then");
-        assert_eq!(styled_text_value(&create_styled_text(&[&first, &comma], wrap, None)), "He left., and");
-        assert_eq!(styled_text_value(&create_styled_text(&[&spaced, &second], wrap, Some(2))), "He left.  Then");
-        assert_eq!(styled_text_value(&create_styled_text(&[&first, &second], wrap, Some(2))), "He left. Then");
         assert_eq!(
-            styled_text_value(&create_styled_text(&[&first, &second], LineJoins::PerBoundary(&[LineJoin::Newline]), None)),
+            styled_text_value(&create_styled_text(&[&first, &second], wrap, None)),
+            "He left. Then"
+        );
+        assert_eq!(
+            styled_text_value(&create_styled_text(&[&dash, &second], wrap, None)),
+            "half-Then"
+        );
+        assert_eq!(
+            styled_text_value(&create_styled_text(&[&first, &comma], wrap, None)),
+            "He left., and"
+        );
+        assert_eq!(
+            styled_text_value(&create_styled_text(&[&spaced, &second], wrap, Some(2))),
+            "He left.  Then"
+        );
+        assert_eq!(
+            styled_text_value(&create_styled_text(&[&first, &second], wrap, Some(2))),
+            "He left. Then"
+        );
+        assert_eq!(
+            styled_text_value(&create_styled_text(
+                &[&first, &second],
+                LineJoins::PerBoundary(&[LineJoin::Newline]),
+                None
+            )),
             "He left.\nThen"
         );
     }

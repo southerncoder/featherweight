@@ -4,8 +4,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::core::positioned_text::{
-    PositionedText, PositionedTextBounds, PositionedTextFont, PositionedTextItem, PositionedTextStyle,
-    SourceMethod,
+    PositionedText, PositionedTextBounds, PositionedTextFont, PositionedTextItem, PositionedTextStyle, SourceMethod,
 };
 use crate::core::text::{is_js_whitespace, js_len};
 
@@ -43,11 +42,10 @@ pub struct PhysicalTextSpan {
 }
 
 pub fn group_positioned_text_into_physical_lines(positioned_text: &PositionedText) -> PhysicalText {
-    let mut connected_lines: Vec<(Vec<&PositionedTextItem>, usize)> =
-        group_items_by_baseline(&positioned_text.items)
-            .into_iter()
-            .flat_map(split_baseline_by_horizontal_connectivity)
-            .collect();
+    let mut connected_lines: Vec<(Vec<&PositionedTextItem>, usize)> = group_items_by_baseline(&positioned_text.items)
+        .into_iter()
+        .flat_map(split_baseline_by_horizontal_connectivity)
+        .collect();
     // `Array.prototype.sort` is stable, as is `sort_by_key`.
     connected_lines.sort_by_key(|(_, first_source_index)| *first_source_index);
     let space_widths = estimate_space_widths(&positioned_text.items);
@@ -64,9 +62,11 @@ fn group_items_by_baseline(items: &[PositionedTextItem]) -> Vec<Vec<&PositionedT
     let mut baselines: Vec<Vec<&PositionedTextItem>> = Vec::new();
 
     for item in items {
-        let compatible = baselines
-            .iter_mut()
-            .find(|baseline| baseline.iter().any(|existing| have_compatible_baselines(existing, item)));
+        let compatible = baselines.iter_mut().find(|baseline| {
+            baseline
+                .iter()
+                .any(|existing| have_compatible_baselines(existing, item))
+        });
 
         match compatible {
             Some(baseline) => baseline.push(item),
@@ -108,6 +108,7 @@ fn split_baseline_by_horizontal_connectivity(
 
     for item in sorted_items {
         if let Some(current_line) = connected_lines.last_mut() {
+            // invariant: every line is created with one item and only grows.
             let previous_item = *current_line.last().expect("lines are never empty");
             if are_horizontally_connected(previous_item, item) {
                 current_line.push(item);
@@ -326,8 +327,16 @@ mod tests {
             source_method: SourceMethod::EmbeddedText,
             page_index: 0,
             text: text.to_string(),
-            bounds: PositionedTextBounds { x: 36.0, y, width: spaces * 3.0 + (js_len(text) as f64 - spaces) * 6.0, height: 12.0 },
-            font: PositionedTextFont { name: "Proportional".to_string(), size: 12.0 },
+            bounds: PositionedTextBounds {
+                x: 36.0,
+                y,
+                width: spaces * 3.0 + (js_len(text) as f64 - spaces) * 6.0,
+                height: 12.0,
+            },
+            font: PositionedTextFont {
+                name: "Proportional".to_string(),
+                size: 12.0,
+            },
             style: PositionedTextStyle::default(),
         }
     }
@@ -345,9 +354,16 @@ mod tests {
 
         assert_eq!(
             lines,
-            [("INT. HOUSE - DAY", 36.0), ("MR. BROWN ", 36.0 + 34.0 * 3.0), ("Like a Virgin.  ", 36.0 + 22.0 * 3.0)]
+            [
+                ("INT. HOUSE - DAY", 36.0),
+                ("MR. BROWN ", 36.0 + 34.0 * 3.0),
+                ("Like a Virgin.  ", 36.0 + 22.0 * 3.0)
+            ]
         );
-        assert_eq!((physical.lines[1].spans[0].start, physical.lines[1].spans[0].end), (0, "MR. BROWN ".len()));
+        assert_eq!(
+            (physical.lines[1].spans[0].start, physical.lines[1].spans[0].end),
+            (0, "MR. BROWN ".len())
+        );
     }
 
     #[test]
@@ -355,6 +371,9 @@ mod tests {
         let physical = group_positioned_text_into_physical_lines(&PositionedText {
             items: vec![space_indented(0, "   ", 700.0)],
         });
-        assert_eq!((physical.lines[0].text.as_str(), physical.lines[0].bounds.x), ("   ", 36.0));
+        assert_eq!(
+            (physical.lines[0].text.as_str(), physical.lines[0].bounds.x),
+            ("   ", 36.0)
+        );
     }
 }

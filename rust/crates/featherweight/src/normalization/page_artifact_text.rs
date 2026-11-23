@@ -4,6 +4,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::core::physical_lines::{PhysicalTextLine, PhysicalTextSpan};
+use crate::core::text::constant_regex;
 use crate::core::text::{js_len, js_trim};
 
 /// Port of `TextFragment`. The TS `line` object is identified by `line_index`
@@ -39,24 +40,22 @@ const JS_WHITESPACE_CLASS: &str =
 
 /// Port of `continuedHeaderPattern`: `/^CONTINUED:\s*\(\d+\)$/` (JS `\d` is ASCII).
 pub static CONTINUED_HEADER_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(&format!(r"^CONTINUED:{JS_WHITESPACE_CLASS}*\([0-9]+\)$")).expect("valid regex"));
+    LazyLock::new(|| constant_regex(&format!(r"^CONTINUED:{JS_WHITESPACE_CLASS}*\([0-9]+\)$")));
 
 /// Port of `continuedCuePattern`.
 static CONTINUED_CUE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^([A-Z][A-Z0-9 .'-]*?)(?: \((?:V\.?O\.?|O\.?S\.?)\))? \((?:CONT['\x{2019}]D|cont['\x{2019}]d)\)$")
-        .expect("valid regex")
+    constant_regex(r"^([A-Z][A-Z0-9 .'-]*?)(?: \((?:V\.?O\.?|O\.?S\.?)\))? \((?:CONT['\x{2019}]D|cont['\x{2019}]d)\)$")
 });
 
 /// Port of `extendedCuePattern`.
 static EXTENDED_CUE_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^([A-Z][A-Z0-9 .'-]*?) \((?:V\.?O\.?|O\.?S\.?)\)$").expect("valid regex"));
+    LazyLock::new(|| constant_regex(r"^([A-Z][A-Z0-9 .'-]*?) \((?:V\.?O\.?|O\.?S\.?)\)$"));
 
 /// Port of `bareCuePattern`.
-static BARE_CUE_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[A-Z][A-Z0-9 .'-]*$").expect("valid regex"));
+static BARE_CUE_PATTERN: LazyLock<Regex> = LazyLock::new(|| constant_regex(r"^[A-Z][A-Z0-9 .'-]*$"));
 
 /// `/-\d+$/` from `createTextFragment` (JS `\d` is ASCII).
-static FONT_NAME_SUFFIX_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"-[0-9]+$").expect("valid regex"));
+static FONT_NAME_SUFFIX_PATTERN: LazyLock<Regex> = LazyLock::new(|| constant_regex(r"-[0-9]+$"));
 
 /// Port of `createTextFragments`: one fragment per distinct trimmed span text, plus
 /// the whole trimmed line text, in Map insertion order (a repeated text keeps its
@@ -110,6 +109,7 @@ fn create_text_fragment<'a>(
         line_index,
         line,
         // `JSON.stringify(span.style)`: serde emits the fields in the TS object's order.
+        // invariant: a struct of four bools always serializes.
         style: serde_json::to_string(&span.style).expect("style serializes"),
         text: text.to_owned(),
         x: span.bounds.x,
@@ -122,18 +122,30 @@ pub fn parse_character_cue(line_index: usize, line: &PhysicalTextLine) -> Option
     let text = js_trim(&line.text);
 
     if let Some(continued_match) = CONTINUED_CUE_PATTERN.captures(text) {
-        return Some(CharacterCue { continued: true, line_index, name: continued_match[1].to_owned() });
+        return Some(CharacterCue {
+            continued: true,
+            line_index,
+            name: continued_match[1].to_owned(),
+        });
     }
 
     if let Some(extended_match) = EXTENDED_CUE_PATTERN.captures(text) {
-        return Some(CharacterCue { continued: false, line_index, name: extended_match[1].to_owned() });
+        return Some(CharacterCue {
+            continued: false,
+            line_index,
+            name: extended_match[1].to_owned(),
+        });
     }
 
     if !BARE_CUE_PATTERN.is_match(text) {
         return None;
     }
 
-    Some(CharacterCue { continued: false, line_index, name: text.to_owned() })
+    Some(CharacterCue {
+        continued: false,
+        line_index,
+        name: text.to_owned(),
+    })
 }
 
 /// Port of `isExplicitPaginationText`.
@@ -166,6 +178,9 @@ mod tests {
     #[test]
     fn font_suffix_strips_only_ascii_digits() {
         assert_eq!(FONT_NAME_SUFFIX_PATTERN.replace("Courier-12", ""), "Courier");
-        assert_eq!(FONT_NAME_SUFFIX_PATTERN.replace("Courier-\u{0663}", ""), "Courier-\u{0663}");
+        assert_eq!(
+            FONT_NAME_SUFFIX_PATTERN.replace("Courier-\u{0663}", ""),
+            "Courier-\u{0663}"
+        );
     }
 }

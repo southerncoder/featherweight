@@ -1,14 +1,14 @@
 //! Port of `src/fdx/screenplay-document-to-fdx.ts`.
 use crate::core::screenplay_document::{
-    ActionAlignment, DialogueContent, DialogueSequence, ScreenplayDocument, ScreenplayElement,
-    StyledText, TextRun, TextStyle, TitlePageField,
+    ActionAlignment, DialogueContent, DialogueSequence, ScreenplayDocument, ScreenplayElement, StyledText, TextRun,
+    TextStyle, TitlePageField,
 };
 use crate::core::text::js_trim;
 use crate::error::ScreenplayConversionError;
 
 use super::styled_text_to_fdx::{
-    assert_valid_fdx_text, assert_valid_styled_text, escape_xml_attribute, plain_styled_text,
-    split_styled_text_lines, styled_text_to_fdx,
+    assert_valid_fdx_text, assert_valid_styled_text, escape_xml_attribute, plain_styled_text, split_styled_text_lines,
+    styled_text_to_fdx,
 };
 
 /// `ParagraphAttributes`.
@@ -46,9 +46,7 @@ fn title_alignment(key: &str) -> Option<&'static str> {
 /// Port of `screenplayDocumentToFDX`: serializes a document to Final Draft
 /// XML, or fails with [`ScreenplayConversionError::InvalidFdxText`] when any
 /// text contains a code point XML cannot represent.
-pub fn screenplay_document_to_fdx(
-    document: &ScreenplayDocument,
-) -> Result<String, ScreenplayConversionError> {
+pub fn screenplay_document_to_fdx(document: &ScreenplayDocument) -> Result<String, ScreenplayConversionError> {
     validate_document(document)?;
 
     let content = serialize_body(&document.elements);
@@ -82,11 +80,11 @@ fn validate_document(document: &ScreenplayDocument) -> Result<(), ScreenplayConv
 fn validate_element(element: &ScreenplayElement) -> Result<(), ScreenplayConversionError> {
     match element {
         ScreenplayElement::PageBreak => Ok(()),
-        ScreenplayElement::DualDialogue { left, right } => {
+        ScreenplayElement::DualDialogue { left, right, .. } => {
             validate_dialogue_sequence(left)?;
             validate_dialogue_sequence(right)
         }
-        ScreenplayElement::SceneHeading { text, scene_number } => {
+        ScreenplayElement::SceneHeading { text, scene_number, .. } => {
             assert_valid_styled_text(text)?;
             match scene_number {
                 Some(number) => assert_valid_fdx_text(number),
@@ -94,18 +92,21 @@ fn validate_element(element: &ScreenplayElement) -> Result<(), ScreenplayConvers
             }
         }
         ScreenplayElement::Action { text, .. }
-        | ScreenplayElement::Character { text }
-        | ScreenplayElement::Parenthetical { text }
-        | ScreenplayElement::Dialogue { text }
-        | ScreenplayElement::Lyric { text }
-        | ScreenplayElement::Transition { text } => assert_valid_styled_text(text),
+        | ScreenplayElement::Character { text, .. }
+        | ScreenplayElement::Parenthetical { text, .. }
+        | ScreenplayElement::Dialogue { text, .. }
+        | ScreenplayElement::Lyric { text, .. }
+        | ScreenplayElement::Transition { text, .. } => assert_valid_styled_text(text),
     }
 }
 
 fn validate_dialogue_sequence(sequence: &DialogueSequence) -> Result<(), ScreenplayConversionError> {
     assert_valid_styled_text(&sequence.character.text)?;
 
-    sequence.content.iter().try_for_each(|content| assert_valid_styled_text(dialogue_content_text(content)))
+    sequence
+        .content
+        .iter()
+        .try_for_each(|content| assert_valid_styled_text(dialogue_content_text(content)))
 }
 
 fn dialogue_content_text(content: &DialogueContent) -> &StyledText {
@@ -141,51 +142,52 @@ fn serialize_body(elements: &[ScreenplayElement]) -> String {
 
 /// `serializeElement`; never called with a page break.
 fn serialize_element(element: &ScreenplayElement, starts_new_page: bool) -> String {
-    let attributes = ParagraphAttributes { starts_new_page, ..Default::default() };
+    let attributes = ParagraphAttributes {
+        starts_new_page,
+        ..Default::default()
+    };
 
     match element {
-        ScreenplayElement::SceneHeading { text, scene_number } => serialize_typed_paragraph(
+        ScreenplayElement::SceneHeading { text, scene_number, .. } => serialize_typed_paragraph(
             "Scene Heading",
             text,
-            &ParagraphAttributes { number: scene_number.as_deref(), ..attributes },
+            &ParagraphAttributes {
+                number: scene_number.as_deref(),
+                ..attributes
+            },
             &[],
         ),
-        ScreenplayElement::Action { text, alignment } => serialize_typed_paragraph(
+        ScreenplayElement::Action { text, alignment, .. } => serialize_typed_paragraph(
             "Action",
             text,
-            &ParagraphAttributes { center: *alignment == ActionAlignment::Center, ..attributes },
+            &ParagraphAttributes {
+                center: *alignment == ActionAlignment::Center,
+                ..attributes
+            },
             &[],
         ),
-        ScreenplayElement::Character { text } => {
-            serialize_typed_paragraph("Character", text, &attributes, &[])
-        }
-        ScreenplayElement::Parenthetical { text } => {
+        ScreenplayElement::Character { text, .. } => serialize_typed_paragraph("Character", text, &attributes, &[]),
+        ScreenplayElement::Parenthetical { text, .. } => {
             serialize_typed_paragraph("Parenthetical", text, &attributes, &[])
         }
-        ScreenplayElement::Dialogue { text } => {
-            serialize_typed_paragraph("Dialogue", text, &attributes, &[])
-        }
-        ScreenplayElement::DualDialogue { left, right } => {
-            serialize_dual_dialogue(left, right, starts_new_page)
-        }
+        ScreenplayElement::Dialogue { text, .. } => serialize_typed_paragraph("Dialogue", text, &attributes, &[]),
+        ScreenplayElement::DualDialogue { left, right, .. } => serialize_dual_dialogue(left, right, starts_new_page),
         // Lyrics become italic Action paragraphs (`serializeLyric`).
-        ScreenplayElement::Lyric { text } => {
+        ScreenplayElement::Lyric { text, .. } => {
             serialize_typed_paragraph("Action", text, &attributes, &[TextStyle::Italic])
         }
-        ScreenplayElement::Transition { text } => {
-            serialize_typed_paragraph("Transition", text, &attributes, &[])
-        }
-        ScreenplayElement::PageBreak => unreachable!("page breaks are handled by serialize_body"),
+        ScreenplayElement::Transition { text, .. } => serialize_typed_paragraph("Transition", text, &attributes, &[]),
+        // `serialize_body` turns page breaks into the next paragraph's
+        // `StartsNewPage`; one reaching here has no paragraph of its own.
+        ScreenplayElement::PageBreak => String::new(),
     }
 }
 
-fn serialize_dual_dialogue(
-    left: &DialogueSequence,
-    right: &DialogueSequence,
-    starts_new_page: bool,
-) -> String {
-    let attributes =
-        serialize_paragraph_attributes(&ParagraphAttributes { starts_new_page, ..Default::default() });
+fn serialize_dual_dialogue(left: &DialogueSequence, right: &DialogueSequence, starts_new_page: bool) -> String {
+    let attributes = serialize_paragraph_attributes(&ParagraphAttributes {
+        starts_new_page,
+        ..Default::default()
+    });
     let dialogue = serialize_dialogue_sequence(left) + &serialize_dialogue_sequence(right);
 
     format!("<Paragraph{attributes}><DualDialogue>{dialogue}</DualDialogue></Paragraph>")
@@ -247,7 +249,11 @@ fn serialize_paragraph_attributes(attributes: &ParagraphAttributes) -> String {
         serialized.push("StartsNewPage=\"Yes\"".to_owned());
     }
 
-    if serialized.is_empty() { String::new() } else { format!(" {}", serialized.join(" ")) }
+    if serialized.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", serialized.join(" "))
+    }
 }
 
 fn serialize_empty_page_break() -> String {
@@ -259,14 +265,23 @@ fn serialize_title_page(fields: &[TitlePageField]) -> Option<String> {
         return None;
     }
 
-    Some(fields.iter().flat_map(title_field_to_paragraphs).map(|p| serialize_title_paragraph(&p)).collect())
+    Some(
+        fields
+            .iter()
+            .flat_map(title_field_to_paragraphs)
+            .map(|p| serialize_title_paragraph(&p))
+            .collect(),
+    )
 }
 
 fn title_field_to_paragraphs(field: &TitlePageField) -> Vec<TitleParagraph> {
     let alignment = title_alignment(&field.key);
 
     if field.values.is_empty() {
-        return vec![TitleParagraph { alignment, text: plain_styled_text(&format!("{}:", field.key)) }];
+        return vec![TitleParagraph {
+            alignment,
+            text: plain_styled_text(&format!("{}:", field.key)),
+        }];
     }
 
     if alignment.is_some() {
@@ -282,15 +297,26 @@ fn title_field_to_paragraphs(field: &TitlePageField) -> Vec<TitleParagraph> {
     let uses_inline_layout = value_lines.len() == 1 && value_lines[0].len() == 1;
 
     if uses_inline_layout {
-        let mut runs = vec![TextRun { text: format!("{}: ", field.key), styles: Vec::new() }];
+        let mut runs = vec![TextRun {
+            text: format!("{}: ", field.key),
+            styles: Vec::new(),
+        }];
         runs.extend(value_lines[0][0].runs.iter().cloned());
-        return vec![TitleParagraph { alignment: None, text: StyledText { runs } }];
+        return vec![TitleParagraph {
+            alignment: None,
+            text: StyledText { runs },
+        }];
     }
 
-    let mut paragraphs =
-        vec![TitleParagraph { alignment: None, text: plain_styled_text(&format!("{}:", field.key)) }];
+    let mut paragraphs = vec![TitleParagraph {
+        alignment: None,
+        text: plain_styled_text(&format!("{}:", field.key)),
+    }];
     paragraphs.extend(
-        value_lines.into_iter().flatten().map(|text| TitleParagraph { alignment: None, text }),
+        value_lines
+            .into_iter()
+            .flatten()
+            .map(|text| TitleParagraph { alignment: None, text }),
     );
     paragraphs
 }
@@ -301,7 +327,10 @@ fn serialize_title_paragraph(paragraph: &TitleParagraph) -> String {
         .map(|alignment| format!(" Alignment=\"{alignment}\""))
         .unwrap_or_default();
 
-    format!("<Paragraph{alignment}>{}</Paragraph>", styled_text_to_fdx(&paragraph.text, &[]))
+    format!(
+        "<Paragraph{alignment}>{}</Paragraph>",
+        styled_text_to_fdx(&paragraph.text, &[])
+    )
 }
 
 /// Expected strings are the raw output of the TypeScript `screenplayDocumentToFDX`
@@ -317,7 +346,9 @@ mod tests {
 
     #[test]
     fn maps_every_direct_model_variant_and_positional_title_field() {
-        let document = parse(r#"{"titlePage":[{"key":" title ","values":[{"runs":[{"text":"FIRST\nSECOND","styles":["bold"]}]}]},{"key":"Credit","values":[{"runs":[{"text":"Written by","styles":[]}]}]},{"key":"Authors","values":[{"runs":[{"text":"Ada & Bea","styles":[]}]}]},{"key":"Source","values":[{"runs":[{"text":"A novel","styles":[]}]}]},{"key":"Draft date","values":[{"runs":[{"text":"2026-08-05","styles":[]}]}]},{"key":"Contact","values":[{"runs":[{"text":"mail@example.test","styles":[]}]}]},{"key":"Copyright","values":[{"runs":[{"text":"Copyright 2026","styles":[]}]}]},{"key":"Notes","values":[{"runs":[{"text":"Private note","styles":[]}]}]},{"key":"Custom","values":[{"runs":[{"text":"one line","styles":[]}]}]},{"key":"Gallery","values":[{"runs":[{"text":"first","styles":[]}]},{"runs":[{"text":"second\n\nthird","styles":[]}]}]},{"key":"Empty","values":[]},{"key":"Author","values":[]}],"elements":[{"type":"scene-heading","text":{"runs":[{"text":"INT. LAB & CELLAR - NIGHT","styles":[]}]},"sceneNumber":"A&\"7\""},{"type":"scene-heading","text":{"runs":[{"text":"MEMORY","styles":[]}]},"sceneNumber":null},{"type":"action","text":{"runs":[{"text":"Standard action.","styles":[]}]},"alignment":"standard"},{"type":"action","text":{"runs":[{"text":"Centered action.","styles":[]}]},"alignment":"center"},{"type":"character","text":{"runs":[{"text":"ADA","styles":[]}]}},{"type":"parenthetical","text":{"runs":[{"text":"(quietly)","styles":[]}]}},{"type":"dialogue","text":{"runs":[{"text":"Exact words.","styles":[]}]}},{"type":"transition","text":{"runs":[{"text":"CUT TO:","styles":[]}]}},{"type":"lyric","text":{"runs":[{"text":"Sing ","styles":[]},{"text":"bright","styles":["bold","underline"]}]}}]}"#);
+        let document = parse(
+            r#"{"titlePage":[{"key":" title ","values":[{"runs":[{"text":"FIRST\nSECOND","styles":["bold"]}]}]},{"key":"Credit","values":[{"runs":[{"text":"Written by","styles":[]}]}]},{"key":"Authors","values":[{"runs":[{"text":"Ada & Bea","styles":[]}]}]},{"key":"Source","values":[{"runs":[{"text":"A novel","styles":[]}]}]},{"key":"Draft date","values":[{"runs":[{"text":"2026-08-05","styles":[]}]}]},{"key":"Contact","values":[{"runs":[{"text":"mail@example.test","styles":[]}]}]},{"key":"Copyright","values":[{"runs":[{"text":"Copyright 2026","styles":[]}]}]},{"key":"Notes","values":[{"runs":[{"text":"Private note","styles":[]}]}]},{"key":"Custom","values":[{"runs":[{"text":"one line","styles":[]}]}]},{"key":"Gallery","values":[{"runs":[{"text":"first","styles":[]}]},{"runs":[{"text":"second\n\nthird","styles":[]}]}]},{"key":"Empty","values":[]},{"key":"Author","values":[]}],"elements":[{"type":"scene-heading","text":{"runs":[{"text":"INT. LAB & CELLAR - NIGHT","styles":[]}]},"sceneNumber":"A&\"7\""},{"type":"scene-heading","text":{"runs":[{"text":"MEMORY","styles":[]}]},"sceneNumber":null},{"type":"action","text":{"runs":[{"text":"Standard action.","styles":[]}]},"alignment":"standard"},{"type":"action","text":{"runs":[{"text":"Centered action.","styles":[]}]},"alignment":"center"},{"type":"character","text":{"runs":[{"text":"ADA","styles":[]}]}},{"type":"parenthetical","text":{"runs":[{"text":"(quietly)","styles":[]}]}},{"type":"dialogue","text":{"runs":[{"text":"Exact words.","styles":[]}]}},{"type":"transition","text":{"runs":[{"text":"CUT TO:","styles":[]}]}},{"type":"lyric","text":{"runs":[{"text":"Sing ","styles":[]},{"text":"bright","styles":["bold","underline"]}]}}]}"#,
+        );
         assert_eq!(
             screenplay_document_to_fdx(&document).unwrap(),
             concat!(
@@ -358,7 +389,9 @@ mod tests {
 
     #[test]
     fn preserves_run_boundaries_styles_xml_characters_unicode_and_multiline_text() {
-        let document = parse(r#"{"titlePage":[],"elements":[{"type":"scene-heading","text":{"runs":[{"text":"INT. <LAB> & CAFÉ — NIGHT","styles":[]}]},"sceneNumber":"A<&\"2\""},{"type":"action","text":{"runs":[{"text":"plain ","styles":[]},{"text":"bold","styles":["bold"]},{"text":" italic","styles":["italic"]},{"text":" underline","styles":["underline"]},{"text":" strike","styles":["strikeout"]},{"text":" all","styles":["strikeout","underline","italic","bold"]},{"text":" together","styles":[]}]},"alignment":"standard"},{"type":"action","text":{"runs":[{"text":"first\r\nsecond\rthird","styles":[]}]},"alignment":"standard"}]}"#);
+        let document = parse(
+            r#"{"titlePage":[],"elements":[{"type":"scene-heading","text":{"runs":[{"text":"INT. <LAB> & CAFÉ — NIGHT","styles":[]}]},"sceneNumber":"A<&\"2\""},{"type":"action","text":{"runs":[{"text":"plain ","styles":[]},{"text":"bold","styles":["bold"]},{"text":" italic","styles":["italic"]},{"text":" underline","styles":["underline"]},{"text":" strike","styles":["strikeout"]},{"text":" all","styles":["strikeout","underline","italic","bold"]},{"text":" together","styles":[]}]},"alignment":"standard"},{"type":"action","text":{"runs":[{"text":"first\r\nsecond\rthird","styles":[]}]},"alignment":"standard"}]}"#,
+        );
         assert_eq!(
             screenplay_document_to_fdx(&document).unwrap(),
             concat!(
@@ -377,37 +410,62 @@ mod tests {
 
     #[test]
     fn rejects_control_character_in_action() {
-        let document = parse(r#"{"titlePage":[],"elements":[{"type":"action","text":{"runs":[{"text":"before\u0001after","styles":[]}]},"alignment":"standard"}]}"#);
-        assert_eq!(screenplay_document_to_fdx(&document), Err(ScreenplayConversionError::InvalidFdxText));
+        let document = parse(
+            r#"{"titlePage":[],"elements":[{"type":"action","text":{"runs":[{"text":"before\u0001after","styles":[]}]},"alignment":"standard"}]}"#,
+        );
+        assert_eq!(
+            screenplay_document_to_fdx(&document),
+            Err(ScreenplayConversionError::InvalidFdxText)
+        );
     }
 
     #[test]
     fn rejects_control_character_in_scene_number() {
-        let document = parse(r#"{"titlePage":[],"elements":[{"type":"scene-heading","text":{"runs":[{"text":"INT. LAB - NIGHT","styles":[]}]},"sceneNumber":"before\u0001after"}]}"#);
-        assert_eq!(screenplay_document_to_fdx(&document), Err(ScreenplayConversionError::InvalidFdxText));
+        let document = parse(
+            r#"{"titlePage":[],"elements":[{"type":"scene-heading","text":{"runs":[{"text":"INT. LAB - NIGHT","styles":[]}]},"sceneNumber":"before\u0001after"}]}"#,
+        );
+        assert_eq!(
+            screenplay_document_to_fdx(&document),
+            Err(ScreenplayConversionError::InvalidFdxText)
+        );
     }
 
     #[test]
     fn rejects_control_character_in_title_key() {
         let document = parse(r#"{"titlePage":[{"key":"before\u0001after","values":[]}],"elements":[]}"#);
-        assert_eq!(screenplay_document_to_fdx(&document), Err(ScreenplayConversionError::InvalidFdxText));
+        assert_eq!(
+            screenplay_document_to_fdx(&document),
+            Err(ScreenplayConversionError::InvalidFdxText)
+        );
     }
 
     #[test]
     fn rejects_control_character_in_title_value() {
-        let document = parse(r#"{"titlePage":[{"key":"Title","values":[{"runs":[{"text":"before\u0001after","styles":[]}]}]}],"elements":[]}"#);
-        assert_eq!(screenplay_document_to_fdx(&document), Err(ScreenplayConversionError::InvalidFdxText));
+        let document = parse(
+            r#"{"titlePage":[{"key":"Title","values":[{"runs":[{"text":"before\u0001after","styles":[]}]}]}],"elements":[]}"#,
+        );
+        assert_eq!(
+            screenplay_document_to_fdx(&document),
+            Err(ScreenplayConversionError::InvalidFdxText)
+        );
     }
 
     #[test]
     fn rejects_noncharacter_fffe_in_dual_dialogue() {
-        let document = parse(r#"{"titlePage":[],"elements":[{"type":"dual-dialogue","left":{"character":{"type":"character","text":{"runs":[{"text":"A","styles":[]}]}},"content":[]},"right":{"character":{"type":"character","text":{"runs":[{"text":"B","styles":[]}]}},"content":[{"type":"dialogue","text":{"runs":[{"text":"x￾y","styles":[]}]}}]}}]}"#);
-        assert_eq!(screenplay_document_to_fdx(&document), Err(ScreenplayConversionError::InvalidFdxText));
+        let document = parse(
+            r#"{"titlePage":[],"elements":[{"type":"dual-dialogue","left":{"character":{"type":"character","text":{"runs":[{"text":"A","styles":[]}]}},"content":[]},"right":{"character":{"type":"character","text":{"runs":[{"text":"B","styles":[]}]}},"content":[{"type":"dialogue","text":{"runs":[{"text":"x￾y","styles":[]}]}}]}}]}"#,
+        );
+        assert_eq!(
+            screenplay_document_to_fdx(&document),
+            Err(ScreenplayConversionError::InvalidFdxText)
+        );
     }
 
     #[test]
     fn accepts_boundary_code_points() {
-        let document = parse(r#"{"titlePage":[],"elements":[{"type":"action","text":{"runs":[{"text":"\t\n\r ퟿�𐀀􏿿","styles":[]}]},"alignment":"standard"}]}"#);
+        let document = parse(
+            r#"{"titlePage":[],"elements":[{"type":"action","text":{"runs":[{"text":"\t\n\r ퟿�𐀀􏿿","styles":[]}]},"alignment":"standard"}]}"#,
+        );
         assert_eq!(
             screenplay_document_to_fdx(&document).unwrap(),
             concat!(
@@ -424,7 +482,9 @@ mod tests {
 
     #[test]
     fn keeps_ordinary_orphan_dual_and_empty_dialogue_ownership_in_source_order() {
-        let document = parse(r#"{"titlePage":[],"elements":[{"type":"character","text":{"runs":[{"text":"CAPTAIN","styles":[]}]}},{"type":"parenthetical","text":{"runs":[{"text":"(low)","styles":[]}]}},{"type":"dialogue","text":{"runs":[{"text":"Ordinary.","styles":[]}]}},{"type":"dialogue","text":{"runs":[{"text":"Orphan dialogue.","styles":[]}]}},{"type":"parenthetical","text":{"runs":[{"text":"(orphan)","styles":[]}]}},{"type":"character","text":{"runs":[{"text":"ORPHAN CHARACTER","styles":[]}]}},{"type":"dual-dialogue","left":{"character":{"type":"character","text":{"runs":[{"text":"LEFT","styles":[]}]}},"content":[{"type":"parenthetical","text":{"runs":[{"text":"(first)","styles":[]}]}},{"type":"dialogue","text":{"runs":[{"text":"Left line.","styles":[]}]}}]},"right":{"character":{"type":"character","text":{"runs":[{"text":"RIGHT","styles":[]}]}},"content":[{"type":"dialogue","text":{"runs":[{"text":"Right one.","styles":[]}]}},{"type":"parenthetical","text":{"runs":[{"text":"(then)","styles":[]}]}},{"type":"dialogue","text":{"runs":[{"text":"Right two.","styles":[]}]}}]}},{"type":"dual-dialogue","left":{"character":{"type":"character","text":{"runs":[{"text":"EMPTY LEFT","styles":[]}]}},"content":[]},"right":{"character":{"type":"character","text":{"runs":[{"text":"EMPTY RIGHT","styles":[]}]}},"content":[]}}]}"#);
+        let document = parse(
+            r#"{"titlePage":[],"elements":[{"type":"character","text":{"runs":[{"text":"CAPTAIN","styles":[]}]}},{"type":"parenthetical","text":{"runs":[{"text":"(low)","styles":[]}]}},{"type":"dialogue","text":{"runs":[{"text":"Ordinary.","styles":[]}]}},{"type":"dialogue","text":{"runs":[{"text":"Orphan dialogue.","styles":[]}]}},{"type":"parenthetical","text":{"runs":[{"text":"(orphan)","styles":[]}]}},{"type":"character","text":{"runs":[{"text":"ORPHAN CHARACTER","styles":[]}]}},{"type":"dual-dialogue","left":{"character":{"type":"character","text":{"runs":[{"text":"LEFT","styles":[]}]}},"content":[{"type":"parenthetical","text":{"runs":[{"text":"(first)","styles":[]}]}},{"type":"dialogue","text":{"runs":[{"text":"Left line.","styles":[]}]}}]},"right":{"character":{"type":"character","text":{"runs":[{"text":"RIGHT","styles":[]}]}},"content":[{"type":"dialogue","text":{"runs":[{"text":"Right one.","styles":[]}]}},{"type":"parenthetical","text":{"runs":[{"text":"(then)","styles":[]}]}},{"type":"dialogue","text":{"runs":[{"text":"Right two.","styles":[]}]}}]}},{"type":"dual-dialogue","left":{"character":{"type":"character","text":{"runs":[{"text":"EMPTY LEFT","styles":[]}]}},"content":[]},"right":{"character":{"type":"character","text":{"runs":[{"text":"EMPTY RIGHT","styles":[]}]}},"content":[]}}]}"#,
+        );
         assert_eq!(
             screenplay_document_to_fdx(&document).unwrap(),
             concat!(
@@ -455,7 +515,9 @@ mod tests {
 
     #[test]
     fn attaches_page_breaks_to_following_content_with_empty_action_fallbacks() {
-        let document = parse(r#"{"titlePage":[],"elements":[{"type":"page-break"},{"type":"action","text":{"runs":[{"text":"Leading target.","styles":[]}]},"alignment":"standard"},{"type":"character","text":{"runs":[{"text":"VOICE","styles":[]}]}},{"type":"page-break"},{"type":"dialogue","text":{"runs":[{"text":"Dialogue target.","styles":[]}]}},{"type":"page-break"},{"type":"page-break"},{"type":"dual-dialogue","left":{"character":{"type":"character","text":{"runs":[{"text":"LEFT","styles":[]}]}},"content":[{"type":"dialogue","text":{"runs":[{"text":"One.","styles":[]}]}}]},"right":{"character":{"type":"character","text":{"runs":[{"text":"RIGHT","styles":[]}]}},"content":[{"type":"dialogue","text":{"runs":[{"text":"Two.","styles":[]}]}}]}},{"type":"action","text":{"runs":[{"text":"After dual.","styles":[]}]},"alignment":"standard"},{"type":"page-break"},{"type":"page-break"}]}"#);
+        let document = parse(
+            r#"{"titlePage":[],"elements":[{"type":"page-break"},{"type":"action","text":{"runs":[{"text":"Leading target.","styles":[]}]},"alignment":"standard"},{"type":"character","text":{"runs":[{"text":"VOICE","styles":[]}]}},{"type":"page-break"},{"type":"dialogue","text":{"runs":[{"text":"Dialogue target.","styles":[]}]}},{"type":"page-break"},{"type":"page-break"},{"type":"dual-dialogue","left":{"character":{"type":"character","text":{"runs":[{"text":"LEFT","styles":[]}]}},"content":[{"type":"dialogue","text":{"runs":[{"text":"One.","styles":[]}]}}]},"right":{"character":{"type":"character","text":{"runs":[{"text":"RIGHT","styles":[]}]}},"content":[{"type":"dialogue","text":{"runs":[{"text":"Two.","styles":[]}]}}]}},{"type":"action","text":{"runs":[{"text":"After dual.","styles":[]}]},"alignment":"standard"},{"type":"page-break"},{"type":"page-break"}]}"#,
+        );
         assert_eq!(
             screenplay_document_to_fdx(&document).unwrap(),
             concat!(
@@ -495,7 +557,9 @@ mod tests {
 
     #[test]
     fn emits_stable_title_and_body() {
-        let document = parse(r#"{"titlePage":[{"key":"Title","values":[{"runs":[{"text":"Stable title","styles":[]}]}]}],"elements":[{"type":"action","text":{"runs":[{"text":"Stable ","styles":[]},{"text":"body","styles":["italic"]}]},"alignment":"standard"}]}"#);
+        let document = parse(
+            r#"{"titlePage":[{"key":"Title","values":[{"runs":[{"text":"Stable title","styles":[]}]}]}],"elements":[{"type":"action","text":{"runs":[{"text":"Stable ","styles":[]},{"text":"body","styles":["italic"]}]},"alignment":"standard"}]}"#,
+        );
         assert_eq!(
             screenplay_document_to_fdx(&document).unwrap(),
             concat!(
@@ -512,7 +576,9 @@ mod tests {
 
     #[test]
     fn title_page_edge_cases() {
-        let document = parse(r#"{"titlePage":[{"key":"Constructor","values":[]},{"key":" __proto__ ","values":[{"runs":[{"text":"a\nb","styles":[]}]}]},{"key":"toString","values":[{"runs":[{"text":"x","styles":[]}]}]},{"key":"Multi","values":[{"runs":[{"text":"one\r\n","styles":["italic"]},{"text":"two","styles":["bold"]}]}]},{"key":"Tab\tKey","values":[{"runs":[{"text":"it's \"q\"","styles":["underline"]}]}]},{"key":"Empty value","values":[{"runs":[]}]}],"elements":[{"type":"scene-heading","text":{"runs":[{"text":"X","styles":[]}]},"sceneNumber":"a\tb\nc\rd"},{"type":"page-break"},{"type":"lyric","text":{"runs":[{"text":"la","styles":["italic"]}]}}]}"#);
+        let document = parse(
+            r#"{"titlePage":[{"key":"Constructor","values":[]},{"key":" __proto__ ","values":[{"runs":[{"text":"a\nb","styles":[]}]}]},{"key":"toString","values":[{"runs":[{"text":"x","styles":[]}]}]},{"key":"Multi","values":[{"runs":[{"text":"one\r\n","styles":["italic"]},{"text":"two","styles":["bold"]}]}]},{"key":"Tab\tKey","values":[{"runs":[{"text":"it's \"q\"","styles":["underline"]}]}]},{"key":"Empty value","values":[{"runs":[]}]}],"elements":[{"type":"scene-heading","text":{"runs":[{"text":"X","styles":[]}]},"sceneNumber":"a\tb\nc\rd"},{"type":"page-break"},{"type":"lyric","text":{"runs":[{"text":"la","styles":["italic"]}]}}]}"#,
+        );
         assert_eq!(
             screenplay_document_to_fdx(&document).unwrap(),
             concat!(

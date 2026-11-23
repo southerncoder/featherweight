@@ -28,6 +28,7 @@ use crate::core::recognition::title_page::extract_title_page;
 use crate::core::screenplay_document::{
     Character, DialogueContent, DialogueSequence, ScreenplayDocument, ScreenplayElement,
 };
+use crate::core::text::constant_regex;
 use crate::core::text::{js_len, js_trim_end};
 
 /// JavaScript's `\s` class, spelled out because the `regex` crate's `\s`
@@ -37,19 +38,40 @@ const JS_WHITESPACE_CLASS: &str =
 
 /// `/\s*\(CONT['’]D\)\s*$/iu`.
 static CUE_CONTINUATION: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(r"(?i){JS_WHITESPACE_CLASS}*\(CONT['’]D\){JS_WHITESPACE_CLASS}*$")).expect("valid regex")
+    constant_regex(&format!(
+        r"(?i){JS_WHITESPACE_CLASS}*\(CONT['’]D\){JS_WHITESPACE_CLASS}*$"
+    ))
 });
 /// `/[.!?…]["'’”)]?\s*$/u`.
-static DIALOGUE_SENTENCE_ENDING: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(r#"[.!?…]["'’”)]?{JS_WHITESPACE_CLASS}*$"#)).expect("valid regex")
-});
+static DIALOGUE_SENTENCE_ENDING: LazyLock<Regex> =
+    LazyLock::new(|| constant_regex(&format!(r#"[.!?…]["'’”)]?{JS_WHITESPACE_CLASS}*$"#)));
 
 /// Port of `recognizeScreenplay`.
 pub fn recognize_screenplay(normalized_text: &NormalizedText, layout: &ScreenplayLayout) -> ScreenplayDocument {
-    let lines: Vec<&PhysicalTextLine> = normalized_text.pages.iter().flat_map(|page| page.lines.iter()).collect();
+    recognize(normalized_text, layout, false)
+}
+
+/// [`recognize_screenplay`], with each element's `page` set to the 0-based page
+/// of the line that starts it. Not in the TypeScript API.
+pub(crate) fn recognize_screenplay_with_pages(
+    normalized_text: &NormalizedText,
+    layout: &ScreenplayLayout,
+) -> ScreenplayDocument {
+    recognize(normalized_text, layout, true)
+}
+
+fn recognize(normalized_text: &NormalizedText, layout: &ScreenplayLayout, with_pages: bool) -> ScreenplayDocument {
+    let lines: Vec<&PhysicalTextLine> = normalized_text
+        .pages
+        .iter()
+        .flat_map(|page| page.lines.iter())
+        .collect();
 
     if lines.is_empty() {
-        return ScreenplayDocument { title_page: Vec::new(), elements: Vec::new() };
+        return ScreenplayDocument {
+            title_page: Vec::new(),
+            elements: Vec::new(),
+        };
     }
 
     let coordinate_tolerance = infer_coordinate_tolerance(&lines);
@@ -57,8 +79,11 @@ pub fn recognize_screenplay(normalized_text: &NormalizedText, layout: &Screenpla
     let title_page = extract_title_page(&lines, layout, coordinate_tolerance);
     let body_lines = &title_page.body_lines;
     let unattributed_lines: LineSet = title_page.unattributed_lines.iter().copied().collect();
-    let recognition_lines: Vec<&PhysicalTextLine> =
-        body_lines.iter().copied().filter(|line| !unattributed_lines.contains(line)).collect();
+    let recognition_lines: Vec<&PhysicalTextLine> = body_lines
+        .iter()
+        .copied()
+        .filter(|line| !unattributed_lines.contains(line))
+        .collect();
     let sequences = find_screenplay_sequences(&recognition_lines, coordinate_tolerance);
     // `Map` keyed by line identity; later entries overwrite earlier ones, as
     // with `new Map(entries)`. Only looked up, never iterated.
@@ -86,21 +111,36 @@ pub fn recognize_screenplay(normalized_text: &NormalizedText, layout: &Screenpla
         .enumerate()
         .map(|(index, evidence)| (std::ptr::from_ref(evidence.heading), index))
         .collect();
-    let scene_number_fragments: LineSet =
-        scene_headings.iter().flat_map(|evidence| evidence.number_fragments.iter().copied()).collect();
+    let scene_number_fragments: LineSet = scene_headings
+        .iter()
+        .flat_map(|evidence| evidence.number_fragments.iter().copied())
+        .collect();
     let mut consumed_lines: LineSet = LineSet::new();
     let mut elements: Vec<ScreenplayElement> = Vec::new();
     let centered_evidence_blocked_lines: LineSet = title_page
         .unattributed_lines
         .iter()
         .copied()
-        .chain(sequences.reserved_lines.iter().filter(|line| !transition_lines.contains(line)))
-        .chain(scene_headings.iter().flat_map(|evidence| evidence.heading_lines.iter().copied()))
+        .chain(
+            sequences
+                .reserved_lines
+                .iter()
+                .filter(|line| !transition_lines.contains(line)),
+        )
+        .chain(
+            scene_headings
+                .iter()
+                .flat_map(|evidence| evidence.heading_lines.iter().copied()),
+        )
         .chain(scene_number_fragments.iter())
         .collect();
     let dialogue_line_measure = infer_dialogue_line_measure(&recognition_lines, layout, coordinate_tolerance);
-    let centered_action_lines =
-        find_centered_action_lines(body_lines, &centered_evidence_blocked_lines, layout, coordinate_tolerance);
+    let centered_action_lines = find_centered_action_lines(
+        body_lines,
+        &centered_evidence_blocked_lines,
+        layout,
+        coordinate_tolerance,
+    );
     let centered_transition_lines: LineSet = sequences
         .transition_lines
         .iter()
@@ -111,14 +151,29 @@ pub fn recognize_screenplay(normalized_text: &NormalizedText, layout: &Screenpla
         .unattributed_lines
         .iter()
         .copied()
-        .chain(sequences.reserved_lines.iter().filter(|line| !centered_transition_lines.contains(line)))
-        .chain(scene_headings.iter().flat_map(|evidence| evidence.heading_lines.iter().copied()))
+        .chain(
+            sequences
+                .reserved_lines
+                .iter()
+                .filter(|line| !centered_transition_lines.contains(line)),
+        )
+        .chain(
+            scene_headings
+                .iter()
+                .flat_map(|evidence| evidence.heading_lines.iter().copied()),
+        )
         .chain(scene_number_fragments.iter())
         .collect();
 
+    // Elements pushed since `page_from` came from a line on `page`.
+    let (mut page_from, mut page) = (0, 0);
     let mut index = 0;
     while index < body_lines.len() {
         let line = body_lines[index];
+        if with_pages {
+            set_element_pages(&mut elements[page_from..], page);
+            (page_from, page) = (elements.len(), line.page_index);
+        }
         let key = std::ptr::from_ref(line);
 
         if consumed_lines.contains(line) || scene_number_fragments.contains(line) {
@@ -134,9 +189,18 @@ pub fn recognize_screenplay(normalized_text: &NormalizedText, layout: &Screenpla
         }
 
         if let Some(dialogue) = dialogue_by_cue.get(&key) {
-            elements.extend(create_ordinary_dialogue(dialogue, sentence_spacing_convention, dialogue_line_measure));
+            elements.extend(create_ordinary_dialogue(
+                dialogue,
+                sentence_spacing_convention,
+                dialogue_line_measure,
+            ));
             consumed_lines.insert(dialogue.character_cue);
-            consumed_lines.extend(dialogue.content.iter().flat_map(|content| content.lines.iter().copied()));
+            consumed_lines.extend(
+                dialogue
+                    .content
+                    .iter()
+                    .flat_map(|content| content.lines.iter().copied()),
+            );
             index += 1;
             continue;
         }
@@ -177,7 +241,30 @@ pub fn recognize_screenplay(normalized_text: &NormalizedText, layout: &Screenpla
         index = action_group.next_index;
     }
 
-    ScreenplayDocument { title_page: title_page.fields, elements }
+    if with_pages {
+        set_element_pages(&mut elements[page_from..], page);
+    }
+
+    ScreenplayDocument {
+        title_page: title_page.fields,
+        elements,
+    }
+}
+
+fn set_element_pages(elements: &mut [ScreenplayElement], source_page: usize) {
+    for element in elements {
+        match element {
+            ScreenplayElement::SceneHeading { page, .. }
+            | ScreenplayElement::Action { page, .. }
+            | ScreenplayElement::Character { page, .. }
+            | ScreenplayElement::Parenthetical { page, .. }
+            | ScreenplayElement::Dialogue { page, .. }
+            | ScreenplayElement::DualDialogue { page, .. }
+            | ScreenplayElement::Lyric { page, .. }
+            | ScreenplayElement::Transition { page, .. } => *page = Some(source_page),
+            ScreenplayElement::PageBreak => {}
+        }
+    }
 }
 
 fn create_ordinary_dialogue(
@@ -187,14 +274,17 @@ fn create_ordinary_dialogue(
 ) -> Vec<ScreenplayElement> {
     let character = create_character(occurrence.character_cue);
 
-    std::iter::once(ScreenplayElement::Character { text: character.text })
-        .chain(occurrence.content.iter().map(|content| {
-            match create_dialogue_content(content, sentence_spacing_convention, dialogue_line_measure) {
-                DialogueContent::Parenthetical { text } => ScreenplayElement::Parenthetical { text },
-                DialogueContent::Dialogue { text } => ScreenplayElement::Dialogue { text },
-            }
-        }))
-        .collect()
+    std::iter::once(ScreenplayElement::Character {
+        page: None,
+        text: character.text,
+    })
+    .chain(occurrence.content.iter().map(|content| {
+        match create_dialogue_content(content, sentence_spacing_convention, dialogue_line_measure) {
+            DialogueContent::Parenthetical { text } => ScreenplayElement::Parenthetical { page: None, text },
+            DialogueContent::Dialogue { text } => ScreenplayElement::Dialogue { page: None, text },
+        }
+    }))
+    .collect()
 }
 
 fn create_dual_dialogue(
@@ -202,6 +292,7 @@ fn create_dual_dialogue(
     sentence_spacing_convention: SentenceSpacingConvention,
 ) -> ScreenplayElement {
     ScreenplayElement::DualDialogue {
+        page: None,
         left: create_dialogue_sequence(
             occurrence.left_character_cue,
             &occurrence.left_content,
@@ -222,7 +313,10 @@ fn create_dialogue_sequence(
 ) -> DialogueSequence {
     DialogueSequence {
         character: create_character(character_cue),
-        content: content.iter().map(|item| create_dialogue_content(item, sentence_spacing_convention, None)).collect(),
+        content: content
+            .iter()
+            .map(|item| create_dialogue_content(item, sentence_spacing_convention, None))
+            .collect(),
     }
 }
 
@@ -235,7 +329,11 @@ fn create_dialogue_content(
 ) -> DialogueContent {
     match occurrence.content_type {
         DialogueContentType::Parenthetical => DialogueContent::Parenthetical {
-            text: create_styled_text(&occurrence.lines, LineJoins::Uniform(LineJoin::Wrap), sentence_spacing_convention),
+            text: create_styled_text(
+                &occurrence.lines,
+                LineJoins::Uniform(LineJoin::Wrap),
+                sentence_spacing_convention,
+            ),
         },
         DialogueContentType::Dialogue => DialogueContent::Dialogue {
             text: create_styled_text(
@@ -266,8 +364,7 @@ fn create_dialogue_line_joins(lines: &[&PhysicalTextLine], dialogue_line_measure
 
     for pair in lines.windows(2) {
         let (previous_line, line) = (pair[0], pair[1]);
-        let visible_shortfall =
-            previous_line.bounds.height.min(line.bounds.height) * VISIBLE_LINE_SHORTFALL_MULTIPLIER;
+        let visible_shortfall = previous_line.bounds.height.min(line.bounds.height) * VISIBLE_LINE_SHORTFALL_MULTIPLIER;
         let previous_line_is_short = previous_line.bounds.width + visible_shortfall < dialogue_line_measure;
         let line_is_short = line.bounds.width + visible_shortfall < dialogue_line_measure;
         let previous_line_ends_sentence = DIALOGUE_SENTENCE_ENDING.is_match(&previous_line.text);
@@ -279,7 +376,11 @@ fn create_dialogue_line_joins(lines: &[&PhysicalTextLine], dialogue_line_measure
             && ((previous_line_is_short && (line_is_short || previous_line_ends_sentence))
                 || continues_established_lineation);
 
-        line_joins.push(if preserves_deliberate_break { LineJoin::Newline } else { LineJoin::Wrap });
+        line_joins.push(if preserves_deliberate_break {
+            LineJoin::Newline
+        } else {
+            LineJoin::Wrap
+        });
     }
 
     line_joins
@@ -297,8 +398,13 @@ fn have_matching_line_styles(left: &PhysicalTextLine, right: &PhysicalTextLine) 
     };
     let (left_style, right_style) = (&left_span.style, &right_span.style);
 
-    left.spans.iter().all(|span| have_matching_styles(&span.style, left_style))
-        && right.spans.iter().all(|span| have_matching_styles(&span.style, right_style))
+    left.spans
+        .iter()
+        .all(|span| have_matching_styles(&span.style, left_style))
+        && right
+            .spans
+            .iter()
+            .all(|span| have_matching_styles(&span.style, right_style))
         && have_matching_styles(left_style, right_style)
 }
 
@@ -318,11 +424,16 @@ fn create_character(line: &PhysicalTextLine) -> Character {
     };
 
     let prefix_length = js_len(js_trim_end(&value[..continuation.start()]));
-    Character { text: slice_styled_text(&text, prefix_length) }
+    Character {
+        text: slice_styled_text(&text, prefix_length),
+    }
 }
 
 fn create_transition(line: &PhysicalTextLine) -> ScreenplayElement {
-    ScreenplayElement::Transition { text: create_styled_text(&[line], LineJoins::Uniform(LineJoin::Wrap), None) }
+    ScreenplayElement::Transition {
+        page: None,
+        text: create_styled_text(&[line], LineJoins::Uniform(LineJoin::Wrap), None),
+    }
 }
 
 #[cfg(test)]
@@ -331,8 +442,8 @@ mod tests {
     use super::*;
     use crate::core::layout::screenplay_layout::{HorizontalAlignment, LayoutAnchor};
     use crate::core::normalized_text::NormalizedTextPage;
-    use crate::core::positioned_text::{PositionedTextBounds, PositionedTextFont, SourceMethod};
     use crate::core::physical_lines::PhysicalTextSpan;
+    use crate::core::positioned_text::{PositionedTextBounds, PositionedTextFont, SourceMethod};
     use crate::core::screenplay_document::{ActionAlignment, StyledText, TextRun};
 
     fn anchor(alignment: HorizontalAlignment, x: f64) -> Option<LayoutAnchor> {
@@ -368,7 +479,12 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(source_index, &(text, x, y, width))| {
-                let bounds = PositionedTextBounds { x, y, width, height: 12.0 };
+                let bounds = PositionedTextBounds {
+                    x,
+                    y,
+                    width,
+                    height: 12.0,
+                };
                 PhysicalTextLine {
                     page_index: 0,
                     text: text.to_owned(),
@@ -380,7 +496,10 @@ mod tests {
                         source_index,
                         source_method: SourceMethod::EmbeddedText,
                         bounds,
-                        font: PositionedTextFont { name: "Courier Prime".to_owned(), size: 12.0 },
+                        font: PositionedTextFont {
+                            name: "Courier Prime".to_owned(),
+                            size: 12.0,
+                        },
                         style: PositionedTextStyle::default(),
                     }],
                 }
@@ -395,19 +514,35 @@ mod tests {
     }
 
     fn plain(text: &str) -> StyledText {
-        StyledText { runs: vec![TextRun { text: text.to_owned(), styles: Vec::new() }] }
+        StyledText {
+            runs: vec![TextRun {
+                text: text.to_owned(),
+                styles: Vec::new(),
+            }],
+        }
     }
 
     fn action(text: &str) -> ScreenplayElement {
-        ScreenplayElement::Action { text: plain(text), alignment: ActionAlignment::Standard }
+        ScreenplayElement::Action {
+            page: None,
+            text: plain(text),
+            alignment: ActionAlignment::Standard,
+        }
     }
 
     fn centered(text: &str) -> ScreenplayElement {
-        ScreenplayElement::Action { text: plain(text), alignment: ActionAlignment::Center }
+        ScreenplayElement::Action {
+            page: None,
+            text: plain(text),
+            alignment: ActionAlignment::Center,
+        }
     }
 
     fn document(elements: Vec<ScreenplayElement>) -> ScreenplayDocument {
-        ScreenplayDocument { title_page: Vec::new(), elements }
+        ScreenplayDocument {
+            title_page: Vec::new(),
+            elements,
+        }
     }
 
     #[test]
@@ -463,8 +598,15 @@ mod tests {
             document(vec![
                 action("TITLE OVER:"),
                 centered("BIG FISH"),
-                ScreenplayElement::SceneHeading { text: plain("INT. HOSPITAL - DAY"), scene_number: None },
-                ScreenplayElement::Transition { text: plain("CUT TO BLACK.") },
+                ScreenplayElement::SceneHeading {
+                    page: None,
+                    text: plain("INT. HOSPITAL - DAY"),
+                    scene_number: None
+                },
+                ScreenplayElement::Transition {
+                    page: None,
+                    text: plain("CUT TO BLACK.")
+                },
                 centered("THE END"),
             ])
         );
@@ -493,7 +635,10 @@ mod tests {
 
     #[test]
     fn returns_an_empty_document_without_lines() {
-        assert_eq!(recognize_screenplay(&NormalizedText::default(), &null_layout()), document(Vec::new()));
+        assert_eq!(
+            recognize_screenplay(&NormalizedText::default(), &null_layout()),
+            document(Vec::new())
+        );
     }
 }
 
@@ -504,7 +649,9 @@ mod text_formatted_tests {
     use serde_json::json;
 
     use super::*;
-    use crate::core::screenplay_document::{ActionAlignment, ScreenplayElement, StyledText, TextRun, TextStyle, TitlePageField};
+    use crate::core::screenplay_document::{
+        ActionAlignment, ScreenplayElement, StyledText, TextRun, TextStyle, TitlePageField,
+    };
 
     /// A page of lines as `(text, x, y, bold)`, built like the TypeScript
     /// `createPhysicalLine` helper (7.2 per character, Courier Prime 12).
@@ -550,15 +697,27 @@ mod text_formatted_tests {
     }
 
     fn plain(text: &str) -> StyledText {
-        StyledText { runs: vec![TextRun { text: text.to_owned(), styles: Vec::new() }] }
+        StyledText {
+            runs: vec![TextRun {
+                text: text.to_owned(),
+                styles: Vec::new(),
+            }],
+        }
     }
 
     fn field(key: &str, values: &[&str]) -> TitlePageField {
-        TitlePageField { key: key.to_owned(), values: values.iter().map(|value| plain(value)).collect() }
+        TitlePageField {
+            key: key.to_owned(),
+            values: values.iter().map(|value| plain(value)).collect(),
+        }
     }
 
     fn action(text: &str) -> ScreenplayElement {
-        ScreenplayElement::Action { text: plain(text), alignment: ActionAlignment::Standard }
+        ScreenplayElement::Action {
+            page: None,
+            text: plain(text),
+            alignment: ActionAlignment::Standard,
+        }
     }
 
     /// Centered at x = 306.
@@ -579,14 +738,22 @@ mod text_formatted_tests {
 
         assert_eq!(
             document.title_page,
-            [field("Title", &["TITLE"]), field("Credit", &["by"]), field("Author", &["Writer Name"])]
+            [
+                field("Title", &["TITLE"]),
+                field("Credit", &["by"]),
+                field("Author", &["Writer Name"])
+            ]
         );
         assert_eq!(
             document.elements,
             [
                 ScreenplayElement::SceneHeading {
+                    page: None,
                     text: StyledText {
-                        runs: vec![TextRun { text: "INT. ROOM - DAY".to_owned(), styles: vec![TextStyle::Bold] }]
+                        runs: vec![TextRun {
+                            text: "INT. ROOM - DAY".to_owned(),
+                            styles: vec![TextStyle::Bold]
+                        }]
                     },
                     scene_number: None,
                 },
@@ -636,14 +803,24 @@ mod text_formatted_tests {
 
         assert_eq!(
             recognize_screenplay(&input, &layout()).title_page,
-            [field("Title", &["TITLE"]), field("Credit", &["Screenplay by"]), field("Author", &["Writer Name"])]
+            [
+                field("Title", &["TITLE"]),
+                field("Credit", &["Screenplay by"]),
+                field("Author", &["Writer Name"])
+            ]
         );
     }
 
     #[test]
     fn treats_line_end_padding_as_a_single_word_space_and_trims_element_edges() {
-        let input = normalized_text(&[&[("He waits for  ", 108.0, 700.0, false), ("the train.   ", 108.0, 688.0, false)]]);
+        let input = normalized_text(&[&[
+            ("He waits for  ", 108.0, 700.0, false),
+            ("the train.   ", 108.0, 688.0, false),
+        ]]);
 
-        assert_eq!(recognize_screenplay(&input, &layout()).elements, [action("He waits for the train.")]);
+        assert_eq!(
+            recognize_screenplay(&input, &layout()).elements,
+            [action("He waits for the train.")]
+        );
     }
 }

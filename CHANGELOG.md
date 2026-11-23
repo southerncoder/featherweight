@@ -20,6 +20,10 @@ All notable changes to Featherweight are documented in this file.
 - Fix the package-contract test on Windows, where `npm.cmd` needs a shell.
 - Add a Rust port (`rust/`) with byte-identical output, a one-call API and a
   matching `featherweight` CLI.
+- Rust crate 0.2.0: `import_screenplay` with progress, cancellation, OCR-page
+  warnings, per-element source pages and user-facing `ImportError`s; no panics
+  on malformed PDFs; optional `fountain`/`fdx` features; TypeScript declarations
+  (`typescript` feature); `Character::split` and `StyledText::plain_text`.
 
 ## 0.1.3 - 2026-08-08
 

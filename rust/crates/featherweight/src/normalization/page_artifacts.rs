@@ -23,7 +23,10 @@ pub fn detect_page_artifacts(physical_text: &PhysicalText) -> PageArtifactDecisi
     let mut diagnostics: ArtifactDiagnostics = vec![None; lines.len()];
 
     if lines.is_empty() {
-        return PageArtifactDecisions { diagnostics, suppression_reasons };
+        return PageArtifactDecisions {
+            diagnostics,
+            suppression_reasons,
+        };
     }
 
     let geometry = measure_page_extents(lines);
@@ -33,5 +36,8 @@ pub fn detect_page_artifacts(physical_text: &PhysicalText) -> PageArtifactDecisi
     detect_explicit_pagination_markers(lines, &geometry, &mut suppression_reasons, &mut diagnostics);
     detect_continued_character_cues(lines, &geometry, &mut suppression_reasons, &mut diagnostics);
 
-    PageArtifactDecisions { diagnostics, suppression_reasons }
+    PageArtifactDecisions {
+        diagnostics,
+        suppression_reasons,
+    }
 }

@@ -1,4 +1,5 @@
 //! Port of `src/core/recognition/sentence-spacing.ts`.
+use crate::core::text::constant_regex;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -13,14 +14,11 @@ pub type SentenceSpacingConvention = Option<usize>;
 /// The consuming part of
 /// `/[.!?…]["'’”)\]]?( +)(?=["'“‘(\[]?[\p{Lu}\p{N}])/gu`; the lookahead is
 /// checked separately with [`SENTENCE_BEGINNING`].
-static INTRA_LINE_SENTENCE_SPACING: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"[.!?…]["'’”)\]]?( +)"#).expect("valid regex"));
+static INTRA_LINE_SENTENCE_SPACING: LazyLock<Regex> = LazyLock::new(|| constant_regex(r#"[.!?…]["'’”)\]]?( +)"#));
 /// `/[.!?…]["'’”)\]]?$/u`.
-static TERMINAL_SENTENCE_BOUNDARY: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"[.!?…]["'’”)\]]?$"#).expect("valid regex"));
+static TERMINAL_SENTENCE_BOUNDARY: LazyLock<Regex> = LazyLock::new(|| constant_regex(r#"[.!?…]["'’”)\]]?$"#));
 /// `/^["'“‘(\[]?[\p{Lu}\p{N}]/u`, also the lookahead of the intra-line pattern.
-static SENTENCE_BEGINNING: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"^["'“‘(\[]?[\p{Lu}\p{N}]"#).expect("valid regex"));
+static SENTENCE_BEGINNING: LazyLock<Regex> = LazyLock::new(|| constant_regex(r#"^["'“‘(\[]?[\p{Lu}\p{N}]"#));
 
 /// Port of `inferSentenceSpacingConvention`.
 pub fn infer_sentence_spacing_convention(lines: &[&PhysicalTextLine]) -> SentenceSpacingConvention {
@@ -41,7 +39,11 @@ pub fn infer_sentence_spacing_convention(lines: &[&PhysicalTextLine]) -> Sentenc
         return None;
     }
 
-    Some(if one_space_boundaries > two_space_boundaries { 1 } else { 2 })
+    Some(if one_space_boundaries > two_space_boundaries {
+        1
+    } else {
+        2
+    })
 }
 
 /// The `( +)` capture of every `matchAll` match of `intraLineSentenceSpacing`.
@@ -55,6 +57,8 @@ fn intra_line_sentence_spacings(text: &str) -> Vec<&str> {
     let mut position = 0;
 
     while let Some(captures) = INTRA_LINE_SENTENCE_SPACING.captures_at(text, position) {
+        // invariant: group 0 is the match itself, and group 1 (`( +)`) is not
+        // optional, so both are present in every match.
         let whole = captures.get(0).expect("whole match");
         let spacing = captures.get(1).expect("spacing group");
 
@@ -62,6 +66,7 @@ fn intra_line_sentence_spacings(text: &str) -> Vec<&str> {
             spacings.push(spacing.as_str());
             position = whole.end();
         } else {
+            // invariant: the pattern starts with a required `[.!?…]`, so matches are non-empty.
             let first_character = text[whole.start()..].chars().next().expect("non-empty match");
             position = whole.start() + first_character.len_utf8();
         }
@@ -82,7 +87,10 @@ mod tests {
 
     #[test]
     fn counts_spacing_only_before_sentence_beginnings() {
-        assert_eq!(intra_line_sentence_spacings("One.  Two. three. \u{201C}Four"), vec!["  ", " "]);
+        assert_eq!(
+            intra_line_sentence_spacings("One.  Two. three. \u{201C}Four"),
+            vec!["  ", " "]
+        );
         assert_eq!(intra_line_sentence_spacings("Wait!) 9 lives"), vec![" "]);
         assert!(intra_line_sentence_spacings("No.   ").is_empty());
     }
