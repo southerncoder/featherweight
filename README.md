@@ -187,6 +187,12 @@ type ScreenplayConversionErrorCode =
   | "INVALID_FDX_TEXT";
 ```
 
+## Rust
+
+A Rust port with byte-identical output lives in [`rust/`](rust/PORTING.md),
+including a one-call API for embedding in editors and the same command-line
+tool.
+
 ## Development
 
 ```sh

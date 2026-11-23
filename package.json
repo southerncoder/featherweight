@@ -58,6 +58,7 @@
     "test:integration": "vitest run --project integration",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
+    "parity": "pnpm build && node scripts/parity.mjs && node scripts/parity-replay.mjs",
     "check": "pnpm typecheck && pnpm build && pnpm test && pnpm test:cli",
     "prepublishOnly": "pnpm check"
   },

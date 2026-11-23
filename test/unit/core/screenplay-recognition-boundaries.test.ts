@@ -19,6 +19,7 @@ interface OwnedLine {
   readonly y: number;
   readonly width?: number;
   readonly styles?: readonly TextStyle[];
+  readonly indentation?: number;
 }
 
 interface OwnedPage {
@@ -52,6 +53,7 @@ function createPhysicalLine(
   return {
     pageIndex,
     text: line.text,
+    ...(line.indentation === undefined ? {} : { indentation: line.indentation }),
     bounds,
     spans: [
       {
@@ -952,8 +954,8 @@ describe("recognizeScreenplay evidence boundaries", () => {
         action("Observable sentence. Next sentence."),
         action(
           styled(
-            run("Sentence. ", ["bold"]),
-            run("Next line."),
+            run("Sentence.", ["bold"]),
+            run(" Next line."),
           ),
         ),
       ],
@@ -964,12 +966,111 @@ describe("recognizeScreenplay evidence boundaries", () => {
         action("Observable sentence.  Next sentence."),
         action(
           styled(
-            run("Sentence. ", ["bold"]),
-            run(" Next line."),
+            run("Sentence.", ["bold"]),
+            run("  Next line."),
           ),
         ),
         action("Use e.g. an example."),
       ],
     });
+  });
+});
+
+describe("text-formatted and shared-page screenplays", () => {
+  // Centered at x = 306 with the 7.2-per-character default width.
+  const centered = (text: string, y: number): OwnedLine => ({
+    text,
+    x: 306 - (text.length * 7.2) / 2,
+    y,
+  });
+
+  it("separates a title block that shares the first page with the script", () => {
+    const input = normalizedText([
+      {
+        pageIndex: 0,
+        lines: [
+          centered("TITLE", 700),
+          centered("by", 676),
+          centered("Writer Name", 652),
+          { text: "INT. ROOM - DAY", x: 108, y: 580, styles: ["bold"] },
+          { text: "A door opens.", x: 108, y: 556 },
+        ],
+      },
+    ]);
+
+    expect(recognizeScreenplay(input, establishedLayout)).toEqual({
+      titlePage: [
+        titleField("Title", "TITLE"),
+        titleField("Credit", "by"),
+        titleField("Author", "Writer Name"),
+      ],
+      elements: [scene("INT. ROOM - DAY"), action("A door opens.")],
+    });
+  });
+
+  it("keeps title-page lines no field claims as notes", () => {
+    const input = normalizedText([
+      {
+        pageIndex: 0,
+        lines: [
+          centered("TITLE", 700),
+          centered("by", 676),
+          centered("Writer Name", 652),
+          { text: "FIRST DRAFT", x: 360, y: 120 },
+          { text: "March 1, 2026", x: 360, y: 96 },
+        ],
+      },
+      {
+        pageIndex: 1,
+        lines: [{ text: "INT. ROOM - DAY", x: 108, y: 700 }],
+      },
+    ]);
+
+    expect(recognizeScreenplay(input, establishedLayout).titlePage).toEqual([
+      titleField("Title", "TITLE"),
+      titleField("Credit", "by"),
+      titleField("Author", "Writer Name"),
+      titleField("Notes", "FIRST DRAFT", "March 1, 2026"),
+    ]);
+  });
+
+  it("recognizes a title block centered with spaces in a proportional font", () => {
+    // Centered by character count (center column 20), so not geometrically.
+    const input = normalizedText([
+      {
+        pageIndex: 0,
+        lines: [
+          { text: "TITLE", x: 250, y: 700, indentation: 18 },
+          { text: "Screenplay by", x: 230, y: 676, indentation: 14 },
+          { text: "Writer Name", x: 245, y: 652, indentation: 15 },
+        ],
+      },
+      {
+        pageIndex: 1,
+        lines: [{ text: "INT. ROOM - DAY", x: 108, y: 700 }],
+      },
+    ]);
+
+    expect(recognizeScreenplay(input, establishedLayout).titlePage).toEqual([
+      titleField("Title", "TITLE"),
+      titleField("Credit", "Screenplay by"),
+      titleField("Author", "Writer Name"),
+    ]);
+  });
+
+  it("treats line-end padding as a single word space and trims element edges", () => {
+    const input = normalizedText([
+      {
+        pageIndex: 0,
+        lines: [
+          { text: "He waits for  ", x: 108, y: 700 },
+          { text: "the train.   ", x: 108, y: 688 },
+        ],
+      },
+    ]);
+
+    expect(recognizeScreenplay(input, establishedLayout).elements).toEqual([
+      action("He waits for the train."),
+    ]);
   });
 });

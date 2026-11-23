@@ -16,7 +16,7 @@ export interface TitlePageExtraction {
 }
 
 const conventionalCredit =
-  /^(?:written|prepared|screenplay|teleplay)\s+(?:by|for)$/iu;
+  /^(?:(?:written|prepared|screenplay|teleplay)\s+(?:by|for)|by)$/iu;
 const draftDate = /^\d{1,4}[./-]\d{1,2}[./-]\d{1,4}$/u;
 const copyrightNotice = /^(?:copyright\b|©|\(c\))/iu;
 
@@ -38,9 +38,25 @@ export function extractTitlePage(
   }
 
   const firstPageLines = lines.filter((line) => line.pageIndex === firstPageIndex);
-  const bodyLines = lines.filter((line) => line.pageIndex !== firstPageIndex);
+  const firstPageHeadingIndex = firstPageLines.findIndex((line) =>
+    isSceneHeadingLine(line, layout, coordinateTolerance),
+  );
+
+  // A title block may share the first page with the script's opening. It is
+  // then the lines above the first scene heading, set well apart from it.
+  const titleLines =
+    firstPageHeadingIndex >= 0
+      ? sharedPageTitleLines(firstPageLines, firstPageHeadingIndex)
+      : firstPageLines;
+
+  // The script starts at the top of the first page: no title page.
+  if (titleLines.length === 0) {
+    return { fields: [], bodyLines: lines, unattributedLines: [] };
+  }
+  const titleLineSet = new Set(titleLines);
+  const bodyLines = lines.filter((line) => !titleLineSet.has(line));
   const isSeparateTitlePage =
-    firstPageLines.length > 0 &&
+    titleLines.length > 0 &&
     bodyLines.length > 0 &&
     bodyLines.some((line) =>
       isSceneHeadingLine(line, layout, coordinateTolerance),
@@ -51,19 +67,57 @@ export function extractTitlePage(
   }
 
   const fields = recognizeConventionalTitlePage(
-    firstPageLines,
+    titleLines,
     coordinateTolerance,
   );
 
   if (fields === null) {
+    // Lines above the script's first heading that are not a title block are
+    // part of the script (cold-open text, scene-number fragments).
+    if (firstPageHeadingIndex > 0) {
+      return { fields: [], bodyLines: lines, unattributedLines: [] };
+    }
+
     return {
       fields: [],
       bodyLines: lines,
-      unattributedLines: firstPageLines,
+      unattributedLines: titleLines,
     };
   }
 
   return { fields, bodyLines, unattributedLines: [] };
+}
+
+const minimumTitleBlockGap = 3;
+
+/**
+ * The lines of a title block that shares the first page with the script: all
+ * lines above the first scene heading, when the last of them sits at least
+ * {@link minimumTitleBlockGap} line heights above it. Otherwise none, since the
+ * lines are part of the script (cold-open text, scene-number fragments).
+ */
+function sharedPageTitleLines(
+  firstPageLines: readonly PhysicalTextLine[],
+  headingIndex: number,
+): readonly PhysicalTextLine[] {
+  const heading = firstPageLines[headingIndex]!;
+  const candidates = firstPageLines
+    .slice(0, headingIndex)
+    .filter((line) => line.bounds.y > heading.bounds.y);
+  const lowest = candidates.reduce<PhysicalTextLine | undefined>(
+    (current, line) =>
+      current === undefined || line.bounds.y < current.bounds.y ? line : current,
+    undefined,
+  );
+
+  if (
+    lowest === undefined ||
+    verticalGapInLineHeights(lowest, heading) < minimumTitleBlockGap
+  ) {
+    return [];
+  }
+
+  return candidates;
 }
 
 function recognizeConventionalTitlePage(
@@ -92,7 +146,7 @@ function recognizeConventionalTitlePage(
 
   const fields = [...upperFields, ...footerFields];
 
-  return fields.length > 0 ? fields : null;
+  return fields.length > 0 ? toTitlePageFields(lines, fields) : null;
 }
 
 function findTitleFooterStartIndex(
@@ -124,7 +178,7 @@ function findTitleFooterStartIndex(
 function recognizeUpperTitleFields(
   lines: readonly PhysicalTextLine[],
   coordinateTolerance: number,
-): readonly TitlePageField[] {
+): readonly TitleFieldLines[] {
   if (
     lines.length === 0 ||
     !lines.every((line) =>
@@ -155,7 +209,7 @@ function recognizeUpperTitleFields(
     return [createTitleField("Title", lines.slice(0, titleValueCount))];
   }
 
-  const fields: TitlePageField[] = [];
+  const fields: TitleFieldLines[] = [];
   const titleValues = lines.slice(0, creditIndex);
   const credit = lines[creditIndex]!;
   const possibleAuthor = lines[creditIndex + 1];
@@ -185,7 +239,7 @@ function recognizeUpperTitleFields(
 function recognizeFooterTitleFields(
   lines: readonly PhysicalTextLine[],
   coordinateTolerance: number,
-): readonly TitlePageField[] {
+): readonly TitleFieldLines[] {
   if (lines.length === 0) {
     return [];
   }
@@ -202,7 +256,7 @@ function recognizeFooterTitleFields(
     ];
   }
 
-  const fields: TitlePageField[] = [];
+  const fields: TitleFieldLines[] = [];
   const copyrightIndex = lines.findIndex((line) =>
     copyrightNotice.test(line.text.trim()),
   );
@@ -316,11 +370,45 @@ function recognizeIndependentFooter(
     : null;
 }
 
+/** A title-page field before its lines become styled values. */
+interface TitleFieldLines {
+  readonly key: string;
+  readonly lines: readonly PhysicalTextLine[];
+}
+
 function createTitleField(
   key: string,
   lines: readonly PhysicalTextLine[],
-): TitlePageField {
-  return { key, values: lines.map((line) => createStyledText([line])) };
+): TitleFieldLines {
+  return { key, lines };
+}
+
+/**
+ * Converts recognized fields to title-page fields. Title lines no field claims
+ * are kept as Notes, so recognizing a title page never drops text.
+ */
+function toTitlePageFields(
+  lines: readonly PhysicalTextLine[],
+  fields: readonly TitleFieldLines[],
+): readonly TitlePageField[] {
+  const claimed = new Set(fields.flatMap((field) => field.lines));
+  const unclaimed = lines.filter((line) => !claimed.has(line));
+  const notesIndex = fields.findIndex((field) => field.key === "Notes");
+  const completeFields =
+    unclaimed.length === 0
+      ? fields
+      : notesIndex < 0
+        ? [...fields, createTitleField("Notes", unclaimed)]
+        : fields.map((field, index) =>
+            index === notesIndex
+              ? createTitleField("Notes", [...field.lines, ...unclaimed])
+              : field,
+          );
+
+  return completeFields.map((field) => ({
+    key: field.key,
+    values: field.lines.map((line) => createStyledText([line])),
+  }));
 }
 
 function haveMatchingCenters(
@@ -333,5 +421,27 @@ function haveMatchingCenters(
     Math.min(left.bounds.height, right.bounds.height) / 2,
   );
 
-  return Math.abs(lineCenter(left) - lineCenter(right)) <= tolerance;
+  return (
+    Math.abs(lineCenter(left) - lineCenter(right)) <= tolerance ||
+    haveMatchingCharacterCenters(left, right)
+  );
+}
+
+/**
+ * Text-formatted PDFs center lines by padding with spaces, which a proportional
+ * font no longer renders centered. Compares centers in character columns for
+ * two space-indented lines instead.
+ */
+function haveMatchingCharacterCenters(
+  left: PhysicalTextLine,
+  right: PhysicalTextLine,
+): boolean {
+  if (left.indentation === undefined || right.indentation === undefined) {
+    return false;
+  }
+
+  const characterCenter = (line: PhysicalTextLine): number =>
+    line.indentation! + line.text.trimEnd().length / 2;
+
+  return Math.abs(characterCenter(left) - characterCenter(right)) <= 1;
 }

@@ -5,10 +5,15 @@ members = ["crates/featherweight"]
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.1.0"
+version = "0.2.0"
+rust-version = "1.88"
 
 [workspace.dependencies]
-pdf_oxide = "0.3"
+regex = "1"
+# Pinned to the build behind @firecrawl/pdf-inspector@1.11.2 (the TS reference) for extraction parity.
+pdf-inspector = { version = "=0.1.7", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+# Optional: TypeScript declarations for the JSON types (`typescript` feature).
+ts-rs = "12"

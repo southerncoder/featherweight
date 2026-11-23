@@ -2,6 +2,29 @@
 
 All notable changes to Featherweight are documented in this file.
 
+## Unreleased
+
+- Recover screenplay layout from PDFs that indent with literal spaces instead of
+  positioning text: a line's leading whitespace now sets its position, measured
+  in a per-font space width estimated from the document, and trailing padding
+  no longer counts toward line extents.
+- Join wrapped lines with a single space when a line ends in padding, applying
+  the sentence-spacing convention only at sentence boundaries, and drop
+  whitespace at element edges (no more trailing spaces in cues or headings).
+- Separate a title block that shares the first page with the script instead of
+  leaving the whole page unrecognized.
+- Recognize title blocks centered with spaces in text-formatted PDFs, which a
+  proportional font no longer renders geometrically centered.
+- Accept a bare "by" title-page credit, and keep title-page lines that no field
+  claims as Notes instead of dropping them.
+- Fix the package-contract test on Windows, where `npm.cmd` needs a shell.
+- Add a Rust port (`rust/`) with byte-identical output, a one-call API and a
+  matching `featherweight` CLI.
+- Rust crate 0.2.0: `import_screenplay` with progress, cancellation, OCR-page
+  warnings, per-element source pages and user-facing `ImportError`s; no panics
+  on malformed PDFs; optional `fountain`/`fdx` features; TypeScript declarations
+  (`typescript` feature); `Character::split` and `StyledText::plain_text`.
+
 ## 0.1.3 - 2026-08-08
 
 - Keep adjacent conventional scene headings separate instead of merging a
